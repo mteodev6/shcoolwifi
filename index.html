@@ -1,206 +1,297 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-    <head>
-        <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>School Wi-Fi Showdown</title>
-        <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
-        <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
-        <style>
-            body {
-                margin: 0;
-                background: #222;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                height: 100vh;
-                overflow: hidden;
-                font-family: sans-serif;
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neon Arena Multiplayer</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+    <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
+    <style>
+        body { margin: 0; background: #0a0a12; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #fff; }
+        canvas { box-shadow: 0 0 30px rgba(0, 255, 204, 0.2); border: 2px solid #333; display: none; }
+        
+        /* Setup Lobby UI Overlay */
+        #lobby { background: rgba(15, 15, 26, 0.95); padding: 30px; border-radius: 12px; border: 2px solid #00ffcc; text-align: center; box-shadow: 0 0 20px rgba(0, 255, 204, 0.3); width: 320px; }
+        h2 { margin-top: 0; color: #00ffcc; letter-spacing: 2px; }
+        input, select { width: 100%; padding: 10px; margin: 12px 0; border-radius: 6px; border: 1px solid #444; background: #1a1a2e; color: #fff; font-size: 16px; box-sizing: border-box; }
+        input:focus, select:focus { border-color: #00ffcc; outline: none; }
+        button { width: 100%; padding: 12px; background: #00ffcc; color: #0a0a12; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        button:hover { background: #00ccff; box-shadow: 0 0 10px #00ccff; }
+        label { display: block; text-align: left; font-size: 14px; color: #aaa; margin-bottom: -4px; }
+    </style>
+</head>
+<body>
+
+<div id="lobby">
+    <h2>NEON ARENA</h2>
+    
+    <label for="username">Username</label>
+    <input type="text" id="username" placeholder="Player" maxlength="12">
+    
+    <label for="playerColor">Character Color</label>
+    <select id="playerColor">
+        <option value="0x00ffcc">Cyan Neon</option>
+        <option value="0xff3366">Hot Pink</option>
+        <option value="0xffff00">Laser Yellow</option>
+        <option value="0x9933ff">Electric Purple</option>
+        <option value="0x33ff33">Matrix Green</option>
+    </select>
+
+    <label for="weaponType">Starting Loadout</label>
+    <select id="weaponType">
+        <option value="pistol">Pistol (Balanced)</option>
+        <option value="smg">SMG (Fast & Low Damage)</option>
+        <option value="shotgun">Shotgun (Burst Spread)</option>
+    </select>
+    
+    <button onclick="startGame()">SPAWN INTO ARENA</button>
+</div>
+
+<script>
+// --- Configuration ---
+const ABLY_KEY = 'mWq-qg.aSAwag:CfLtHjHdS9lBnkqrB9RzytbXrCK76hPhXFoFWa8c65g'; // <-- Put your fully capable API key here!
+const ROOM_NAME = 'school-arena';
+
+// Weapon Stats Configuration
+const WEAPONS = {
+    pistol:  { cooldown: 400, speed: 600, damage: 25, spread: 0, count: 1 },
+    smg:     { cooldown: 120, speed: 700, damage: 10, spread: 0.08, count: 1 },
+    shotgun: { cooldown: 800, speed: 500, damage: 15, spread: 0.2, count: 5 }
+};
+
+let ably, channel;
+let myId = 'player_' + Math.random().toString(36).substr(2, 9);
+let player;
+let otherPlayers = {};
+let cursors, wasd;
+let bullets;
+let lastFired = 0;
+let lastNetUpdate = 0;
+const NET_TICK_RATE = 50; // Send updates every 50ms (20 ticks/sec) instead of every frame!
+
+// Profile selections
+let myName = "Player";
+let myColor = "0x00ffcc";
+let myWeapon = "pistol";
+
+function startGame() {
+    const nameInput = document.getElementById('username').value.trim();
+    if(nameInput) myName = nameInput;
+    myColor = document.getElementById('playerColor').value;
+    myWeapon = document.getElementById('weaponType').value;
+
+    document.getElementById('lobby').style.display = 'none';
+    document.querySelector('canvas').style.display = 'block';
+
+    // Boot up Phaser Game
+    new Phaser.Game(config);
+}
+
+const config = {
+    type: Phaser.AUTO,
+    width: 900,
+    height: 650,
+    physics: { default: 'arcade', arcade: { gravity: { y: 0 }, debug: false } },
+    scene: { preload: preload, create: create, update: update }
+};
+
+function preload() {
+    // Generate base colorable assets programmatically
+    let canvas = this.textures.createCanvas('base_player', 32, 32);
+    canvas.context.fillStyle = '#ffffff'; // White base so we can tint it perfectly later
+    canvas.context.fillRect(0, 0, 32, 32);
+    canvas.refresh();
+
+    let bulletCanvas = this.textures.createCanvas('bullet', 8, 8);
+    bulletCanvas.context.fillStyle = '#ffffff';
+    bulletCanvas.context.fillRect(0, 0, 8, 8);
+    bulletCanvas.refresh();
+}
+
+function create() {
+    // 1. Connect to Ably Network first to accurately register self
+    ably = new Ably.Realtime({ key: ABLY_KEY, clientId: myId });
+    channel = ably.channels.get(ROOM_NAME);
+
+    // 2. Setup Local Player
+    player = this.physics.add.sprite(Math.random() * 800 + 50, Math.random() * 550 + 50, 'base_player');
+    player.setCollideWorldBounds(true);
+    player.setTint(parseInt(myColor));
+    player.health = 100;
+    
+    // Add custom structural properties to easily manage drawing mechanics
+    player.nameTag = this.add.text(player.x, player.y - 30, myName, { fontSize: '14px', fontStyle: 'bold', fill: '#ffffff' }).setOrigin(0,0);
+    player.healthBar = this.add.graphics();
+
+    // 3. Setup Groups
+    bullets = this.physics.add.group({ defaultKey: 'bullet' });
+
+    // 4. Setup Controls
+    cursors = this.input.keyboard.createCursorKeys();
+    wasd = this.input.keyboard.addKeys({
+        up: Phaser.Input.Keyboard.KeyCodes.W,
+        down: Phaser.Input.Keyboard.KeyCodes.S,
+        left: Phaser.Input.Keyboard.KeyCodes.A,
+        right: Phaser.Input.Keyboard.KeyCodes.D
+    });
+    this.input.on('pointerdown', fireBullet, this);
+
+    // 5. Network Subscriptions
+    channel.subscribe('update', (message) => {
+        if (message.clientId === myId) return;
+        let d = message.data;
+        
+        if (!otherPlayers[message.clientId]) {
+            // Instantiate new enemy model on tracking loop
+            let enemy = this.physics.add.sprite(d.x, d.y, 'base_player');
+            enemy.setTint(parseInt(d.color));
+            enemy.health = d.health;
+            enemy.nameTag = this.add.text(d.x, d.y - 30, d.name, { fontSize: '13px', fill: '#ffffff' }).setOrigin(0.5);
+            enemy.healthBar = this.add.graphics();
+            
+            otherPlayers[message.clientId] = enemy;
+        } else {
+            let enemy = otherPlayers[message.clientId];
+            enemy.setPosition(d.x, d.y);
+            enemy.health = d.health;
+        }
+    });
+
+    channel.subscribe('shoot', (message) => {
+        if (message.clientId === myId) return;
+        let d = message.data;
+        spawnBullet(this, d.x, d.y, d.targetX, d.targetY, d.color, d.speed, false);
+    });
+
+    channel.subscribe('hit', (message) => {
+        let d = message.data;
+        if (d.targetId === myId) {
+            player.health -= d.damage;
+            this.cameras.main.flash(70, 255, 0, 0); // Flash camera red on hit
+
+            if (player.health <= 0) {
+                player.health = 100;
+                player.setPosition(Math.random() * 800 + 50, Math.random() * 550 + 50);
             }
-            canvas {
-                box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+            sendNetworkUpdate(true); // Force instant state broadcast on status changes
+        }
+    });
+
+    channel.presence.subscribe('leave', (member) => {
+        if (otherPlayers[member.clientId]) {
+            otherPlayers[member.clientId].nameTag.destroy();
+            otherPlayers[member.clientId].healthBar.destroy();
+            otherPlayers[member.clientId].destroy();
+            delete otherPlayers[member.clientId];
+        }
+    });
+    channel.presence.enter();
+}
+
+function update(time) {
+    if (!player) return;
+
+    let speed = 260;
+    player.setVelocity(0);
+
+    // X Movement
+    if (cursors.left.isDown || wasd.left.isDown) player.setVelocityX(-speed);
+    else if (cursors.right.isDown || wasd.right.isDown) player.setVelocityX(speed);
+
+    // Y Movement
+    if (cursors.up.isDown || wasd.up.isDown) player.setVelocityY(-speed);
+    else if (cursors.down.isDown || wasd.down.isDown) player.setVelocityY(speed);
+
+    // Draw Local UI bars
+    updateDynamicUI(player, true);
+
+    // Draw Remote UI elements & check hit detection
+    Object.keys(otherPlayers).forEach(id => {
+        let enemy = otherPlayers[id];
+        updateDynamicUI(enemy, false);
+
+        // Client authoritative hit verification
+        this.physics.overlap(bullets, enemy, (enemySprite, bulletSprite) => {
+            if (bulletSprite.isMine) {
+                bulletSprite.destroy();
+                channel.publish('hit', { targetId: id, damage: WEAPONS[myWeapon].damage });
             }
-        </style>
-    </head>
-    <body>
-        <script>
-            // --- Configuration ---
-            const ABLY_KEY =
-                "mWq-qg.aSAwag:CfLtHjHdS9lBnkqrB9RzytbXrCK76hPhXFoFWa8c65g"; // <-- Put your Ably API key here!
-            const ROOM_NAME = "school-arena";
+        });
+    });
 
-            const config = {
-                type: Phaser.AUTO,
-                width: 800,
-                height: 600,
-                physics: {
-                    default: "arcade",
-                    arcade: { gravity: { y: 0 }, debug: false },
-                },
-                scene: { preload: preload, create: create, update: update },
-            };
+    // Throttled positional broadcaster to eliminate network lag
+    if (time > lastNetUpdate + NET_TICK_RATE) {
+        sendNetworkUpdate(false);
+        lastNetUpdate = time;
+    }
+}
 
-            const game = new Phaser.Game(config);
+function sendNetworkUpdate(force) {
+    if (!channel) return;
+    channel.publish('update', {
+        x: player.x,
+        y: player.y,
+        name: myName,
+        color: myColor,
+        health: player.health
+    });
+}
 
-            let ably, channel;
-            let myId = "player_" + Math.random().toString(36).substr(2, 9);
-            let player;
-            let otherPlayers = {};
-            let cursors;
-            let bullets;
-            let lastFired = 0;
+function fireBullet(pointer) {
+    let time = this.time.now;
+    let weapon = WEAPONS[myWeapon];
 
-            function preload() {
-                // Generate simple textures on the fly so we don't need external image assets
-                let canvas = this.textures.createCanvas("player", 32, 32);
-                canvas.context.fillStyle = "#00ffcc";
-                canvas.context.fillRect(0, 0, 32, 32);
-                canvas.refresh();
+    if (time > lastFired) {
+        // Calculate aiming trajectory angles
+        let angle = Phaser.Math.Angle.Between(player.x, player.y, pointer.x, pointer.y);
 
-                let enemyCanvas = this.textures.createCanvas("enemy", 32, 32);
-                enemyCanvas.context.fillStyle = "#ff3366";
-                enemyCanvas.context.fillRect(0, 0, 32, 32);
-                enemyCanvas.refresh();
+        for (let i = 0; i < weapon.count; i++) {
+            let spreadAngle = angle + Phaser.Math.FloatBetween(-weapon.spread, weapon.spread);
+            let targetX = player.x + Math.cos(spreadAngle) * 100;
+            let targetY = player.y + Math.sin(spreadAngle) * 100;
 
-                let bulletCanvas = this.textures.createCanvas("bullet", 8, 8);
-                bulletCanvas.context.fillStyle = "#ffff00";
-                bulletCanvas.context.fillRect(0, 0, 8, 8);
-                bulletCanvas.refresh();
+            spawnBullet(this, player.x, player.y, targetX, targetY, myColor, weapon.speed, true);
+            
+            if (channel) {
+                channel.publish('shoot', { x: player.x, y: player.y, targetX: targetX, targetY: targetY, color: myColor, speed: weapon.speed });
             }
+        }
+        lastFired = time + weapon.cooldown;
+    }
+}
 
-            function create() {
-                // 1. Setup Local Player
-                player = this.physics.add.sprite(
-                    Math.random() * 700 + 50,
-                    Math.random() * 500 + 50,
-                    "player",
-                );
-                player.setCollideWorldBounds(true);
+function spawnBullet(scene, fromX, fromY, toX, toY, colorHex, speed, isMine) {
+    let bullet = bullets.get(fromX, fromY);
+    if (bullet) {
+        bullet.setActive(true).setVisible(true);
+        bullet.setTint(parseInt(colorHex));
+        bullet.isMine = isMine; // Track bullet ownership structural indicator
+        scene.physics.moveTo(bullet, toX, toY, speed);
+        
+        scene.time.delayedCall(1500, () => { if (bullet.active) bullet.destroy(); });
+    }
+}
 
-                // 2. Setup Controls
-                cursors = this.input.keyboard.createCursorKeys();
-                this.input.on("pointerdown", fireBullet, this);
+function updateDynamicUI(sprite, isLocal) {
+    // 1. Text alignment adjustments
+    sprite.nameTag.setPosition(sprite.x, sprite.y - 28);
+    sprite.nameTag.setOrigin(0.5, 0.5);
 
-                // 3. Setup Bullets Group
-                bullets = this.physics.add.group({
-                    defaultKey: "bullet",
-                    maxSize: 30,
-                });
+    // 2. Clear out graphics stack to rebuild updated status indicators
+    sprite.healthBar.clear();
 
-                // 4. Connect to Ably Realtime Network
-                ably = new Ably.Realtime({ key: ABLY_KEY, clientId: myId });
-                channel = ably.channels.get(ROOM_NAME);
+    // Background Bar (Crimson/Grey structural boundary)
+    sprite.healthBar.fillStyle(0x333333, 1);
+    sprite.healthBar.fillRect(sprite.x - 20, sprite.y - 18, 40, 5);
 
-                // Listen for other players moving or shooting
-                channel.subscribe("update", (message) => {
-                    if (message.clientId === myId) return; // Skip our own messages
+    // Foreground Status (Green for you, structural accent for opponents)
+    let barColor = isLocal ? 0x00ffcc : 0xff3366;
+    let healthWidth = Math.max(0, (sprite.health / 100) * 40);
+    
+    sprite.healthBar.fillStyle(barColor, 1);
+    sprite.healthBar.fillRect(sprite.x - 20, sprite.y - 18, healthWidth, 5);
+}
+</script>
 
-                    let data = message.data;
-                    if (!otherPlayers[message.clientId]) {
-                        // Create enemy sprite if they don't exist yet
-                        otherPlayers[message.clientId] =
-                            this.physics.add.sprite(data.x, data.y, "enemy");
-                    } else {
-                        // Update existing enemy position
-                        otherPlayers[message.clientId].setPosition(
-                            data.x,
-                            data.y,
-                        );
-                    }
-                });
-
-                channel.subscribe("shoot", (message) => {
-                    if (message.clientId === myId) return;
-                    spawnBullet(
-                        this,
-                        message.data.x,
-                        message.data.y,
-                        message.data.targetX,
-                        message.data.targetY,
-                    );
-                });
-
-                // Handle player disconnecting
-                channel.presence.subscribe("leave", (member) => {
-                    if (otherPlayers[member.clientId]) {
-                        otherPlayers[member.clientId].destroy();
-                        delete otherPlayers[member.clientId];
-                    }
-                });
-                channel.presence.enter();
-            }
-
-            function update(time) {
-                let speed = 250;
-                let moved = false;
-
-                player.setVelocity(0);
-
-                if (
-                    cursors.left.isDown ||
-                    this.input.keyboard.addKey("A").isDown
-                ) {
-                    player.setVelocityX(-speed);
-                    moved = true;
-                } else if (
-                    cursors.right.isDown ||
-                    this.input.keyboard.addKey("D").isDown
-                ) {
-                    player.setVelocityX(speed);
-                    moved = true;
-                }
-
-                if (
-                    cursors.up.isDown ||
-                    this.input.keyboard.addKey("W").isDown
-                ) {
-                    player.setVelocityY(-speed);
-                    moved = true;
-                } else if (
-                    cursors.down.isDown ||
-                    this.input.keyboard.addKey("S").isDown
-                ) {
-                    player.setVelocityY(speed);
-                    moved = true;
-                }
-
-                // Broadcast position to everyone else if we moved (capped roughly to frame rate)
-                if (moved && channel) {
-                    channel.publish("update", { x: player.x, y: player.y });
-                }
-            }
-
-            function fireBullet(pointer) {
-                let time = game.loop.time;
-                if (time > lastFired) {
-                    spawnBullet(this, player.x, player.y, pointer.x, pointer.y);
-
-                    // Broadcast the shot to other players
-                    if (channel) {
-                        channel.publish("shoot", {
-                            x: player.x,
-                            y: player.y,
-                            targetX: pointer.x,
-                            targetY: pointer.y,
-                        });
-                    }
-                    lastFired = time + 300; // Cooldown of 300ms
-                }
-            }
-
-            function spawnBullet(scene, fromX, fromY, toX, toY) {
-                let bullet = bullets.get(fromX, fromY);
-                if (bullet) {
-                    bullet.setActive(true);
-                    bullet.setVisible(true);
-                    scene.physics.moveTo(bullet, toX, toY, 500);
-
-                    // Destroy bullet after 2 seconds so it doesn't fly forever
-                    scene.time.delayedCall(2000, () => {
-                        if (bullet) bullet.destroy();
-                    });
-                }
-            }
-        </script>
-    </body>
+</body>
 </html>
