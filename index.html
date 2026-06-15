@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Neon Arena: Expanded & Bright</title>
+    <title>Neon Arena: Tournament</title>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
     <style>
@@ -40,8 +40,9 @@
 <script>
 // --- Config ---
 const ABLY_KEY = 'YOUR_ABLY_API_KEY_HERE'; // <--- PUT YOUR API KEY HERE
-const ROOM_NAME = 'school-arena-massive-v3';
+const ROOM_NAME = 'school-arena-tournament';
 const MAP_SIZE = 3000;
+const KILLS_TO_WIN = 10; // First to 10 kills wins the match!
 
 // Expanded Arsenal
 const WEAPONS = {
@@ -60,29 +61,31 @@ let cursors, wasd, numKeys, reloadKey;
 let lastFired = 0, lastNetUpdate = 0;
 const NET_TICK_RATE = 50; 
 
-// Player State
+// Match State
 let myName = "Player", myColor = "0x00ffcc";
-let myInventory = ['knife', 'pistol', 'smg', 'shotgun']; // Default weapons
+let myInventory = ['knife', 'pistol', 'smg', 'shotgun']; 
 let currentWeapon = 'smg';
 let ammoPool = { knife: 999, pistol: 12, smg: 40, shotgun: 6, sniper: 1 };
-let isReloading = false, isDead = false;
+let isReloading = false, isDead = false, matchOver = false;
+
+// Score Tracking
+let myKills = 0;
+let playerScores = {}; // Tracks everyone's kills
 
 // UI
-let ammoText, reloadText, deathText, weaponText;
+let ammoText, reloadText, deathText, weaponText, leaderboardText, winnerText;
 
 function startGame() {
     if(document.getElementById('username').value.trim()) myName = document.getElementById('username').value.trim();
     myColor = document.getElementById('playerColor').value;
     document.getElementById('lobby').style.display = 'none';
     
-    // Initialize Audio Engine on user interaction
     if (audioCtx.state === 'suspended') audioCtx.resume();
-    
     new Phaser.Game(config);
 }
 
 const config = {
-    type: Phaser.AUTO, width: 900, height: 650, backgroundColor: '#f0f0f5', // Bright Background
+    type: Phaser.AUTO, width: 900, height: 650, backgroundColor: '#f0f0f5', 
     physics: { default: 'arcade', arcade: { debug: false } },
     scene: { preload: preload, create: create, update: update }
 };
@@ -101,8 +104,6 @@ function preload() {
 
 function create() {
     this.physics.world.setBounds(0, 0, MAP_SIZE, MAP_SIZE);
-    
-    // High contrast blue grid for bright theme
     this.add.grid(MAP_SIZE/2, MAP_SIZE/2, MAP_SIZE, MAP_SIZE, 100, 100, 0xf0f0f5, 0, 0x0000ff, 0.1);
 
     ably = new Ably.Realtime({ key: ABLY_KEY, clientId: myId });
@@ -113,14 +114,12 @@ function create() {
     rareWeapons = this.physics.add.group();
     bullets = this.physics.add.group({ defaultKey: 'bullet' });
 
-    // Procedurally generate "Buildings"
     for (let x = 200; x < MAP_SIZE - 200; x += 500) {
         for (let y = 200; y < MAP_SIZE - 200; y += 500) {
             if (Math.random() > 0.3) {
                 walls.create(x, y, 'wall');
                 if (Math.random() > 0.5) walls.create(x + 80, y, 'wall');
                 if (Math.random() > 0.5) walls.create(x, y + 80, 'wall');
-                
                 if (Math.random() > 0.9) {
                     let s = rareWeapons.create(x + 40, y + 40, 'sniperDrop');
                     s.itemId = Math.random().toString(36).substr(2, 6);
@@ -129,7 +128,6 @@ function create() {
         }
     }
 
-    // Spawn NPCs (Target Dummies)
     for(let i = 0; i < 5; i++) {
         let dummy = this.physics.add.sprite(MAP_SIZE/2 + (i*100) - 200, MAP_SIZE/2 + 200, 'dummy');
         dummy.setImmovable(true); dummy.health = 500; dummy.maxHealth = 500;
@@ -137,19 +135,16 @@ function create() {
         dummies.push(dummy);
     }
 
-    // Player Setup
     player = this.physics.add.sprite(MAP_SIZE/2, MAP_SIZE/2, 'base_player');
     player.setCollideWorldBounds(true).setTint(parseInt(myColor));
     player.health = 100;
     
-    // Darker text color for bright background
     player.nameTag = this.add.text(0, 0, myName, { fontSize: '14px', fontStyle: 'bold', fill: '#333333' }).setOrigin(0.5);
     player.healthBar = this.add.graphics();
 
     this.cameras.main.setBounds(0, 0, MAP_SIZE, MAP_SIZE);
     this.cameras.main.startFollow(player, true, 0.1, 0.1);
 
-    // Collisions
     this.physics.add.collider(player, walls);
     this.physics.add.collider(dummies, walls);
     this.physics.add.collider(bullets, walls, (bullet, wall) => {
@@ -167,23 +162,30 @@ function create() {
         weaponDrop.destroy();
     });
 
-    // Dark UI text for bright theme
+    // UI Setup
     weaponText = this.add.text(20, 560, `WEAPON: ${WEAPONS[currentWeapon].name}`, { fontSize: '20px', fill: '#333333', fontStyle: 'bold' }).setDepth(100).setScrollFactor(0);
     ammoText = this.add.text(20, 590, `AMMO: ${ammoPool[currentWeapon]} / ${WEAPONS[currentWeapon].magSize}`, { fontSize: '26px', fontStyle: 'bold', fill: '#0066ff' }).setDepth(100).setScrollFactor(0);
     reloadText = this.add.text(450, 325, 'RELOADING...', { fontSize: '32px', fontStyle: 'bold', fill: '#ff3366' }).setOrigin(0.5).setVisible(false).setDepth(100).setScrollFactor(0);
     deathText = this.add.text(450, 325, 'YOU DIED\nRespawning...', { fontSize: '40px', fontStyle: 'bold', fill: '#ff3366', align: 'center' }).setOrigin(0.5).setVisible(false).setDepth(100).setScrollFactor(0);
+    
+    // Win & Leaderboard UI
+    leaderboardText = this.add.text(880, 20, "--- LEADERBOARD ---\nWaiting for players...", { fontSize: '18px', fontStyle: 'bold', fill: '#333333', align: 'right', backgroundColor: 'rgba(255,255,255,0.7)' }).setOrigin(1, 0).setPadding(10).setDepth(100).setScrollFactor(0);
+    winnerText = this.add.text(450, 300, "", { fontSize: '60px', fontStyle: 'bold', fill: '#0066ff', align: 'center', stroke: '#fff', strokeThickness: 8 }).setOrigin(0.5).setVisible(false).setDepth(200).setScrollFactor(0);
 
-    // Controls
     cursors = this.input.keyboard.createCursorKeys();
     wasd = this.input.keyboard.addKeys({ W: 87, S: 83, A: 65, D: 68 });
     reloadKey = this.input.keyboard.addKey(82); 
     numKeys = { 1: this.input.keyboard.addKey(49), 2: this.input.keyboard.addKey(50), 3: this.input.keyboard.addKey(51), 4: this.input.keyboard.addKey(52), 5: this.input.keyboard.addKey(53) };
 
+    playerScores[myId] = { name: myName, kills: 0 }; // Initialize my score
     setupNetworking(this);
 }
 
 function update(time) {
-    if (!player || isDead) return;
+    if (!player || isDead || matchOver) {
+        player.setVelocity(0); // Stop moving if dead or game is over
+        return; 
+    }
 
     let speed = 300; 
     player.setVelocity(0);
@@ -207,17 +209,23 @@ function update(time) {
 
     updateDynamicUI(player, true);
     
+    // DUMMY HIT DETECTION
     dummies.forEach(dummy => {
         updateDummyUI(dummy);
         this.physics.overlap(bullets, dummy, (d, bullet) => {
             if (bullet.isMine) {
                 bullet.destroy(); createHitEffect(this, bullet.x, bullet.y, myColor, 10);
                 dummy.health -= WEAPONS[currentWeapon].damage;
-                if(dummy.health <= 0) dummy.health = dummy.maxHealth; 
+                if(dummy.health <= 0) {
+                    dummy.health = dummy.maxHealth; 
+                    // Register a kill for hitting a dummy!
+                    channel.publish('kill', { killerId: myId, killerName: myName, victimName: 'Dummy' });
+                }
             }
         });
     });
 
+    // PVP HIT DETECTION
     Object.keys(otherPlayers).forEach(id => {
         let enemy = otherPlayers[id];
         updateDynamicUI(enemy, false);
@@ -226,7 +234,8 @@ function update(time) {
             this.physics.overlap(bullets, enemy, (enemySprite, bulletSprite) => {
                 if (bulletSprite.isMine) {
                     bulletSprite.destroy(); createHitEffect(this, bulletSprite.x, bulletSprite.y, myColor, 10);
-                    channel.publish('hit', { targetId: id, damage: WEAPONS[currentWeapon].damage });
+                    // Tell the network WHO shot them
+                    channel.publish('hit', { targetId: id, damage: WEAPONS[currentWeapon].damage, shooterId: myId, shooterName: myName });
                 }
             });
         }
@@ -245,33 +254,32 @@ function switchWeapon(newWeapon) {
 }
 
 function attemptFire(scene, pointer) {
-    if (isReloading || isDead) return;
+    if (isReloading || isDead || matchOver) return;
     
     let time = scene.time.now;
     let weapon = WEAPONS[currentWeapon];
 
-    // --- KNIFE LOGIC (Melee + Animation) ---
     if (currentWeapon === 'knife') {
         if (time > lastFired) {
-            playSound('shoot'); // Quick swoosh sound
-            
-            // Slash Animation (Tween)
+            playSound('shoot'); 
             scene.tweens.add({ targets: player, angle: player.angle + 90, duration: 100, yoyo: true, ease: 'Power1' });
             
-            // Melee Hit Detection for Dummies
             dummies.forEach(d => { 
                 if(Phaser.Math.Distance.Between(player.x, player.y, d.x, d.y) < 60) {
                     d.health -= weapon.damage;
                     createHitEffect(scene, d.x, d.y, myColor, 10);
+                    if(d.health <= 0) {
+                        d.health = d.maxHealth;
+                        channel.publish('kill', { killerId: myId, killerName: myName, victimName: 'Dummy' });
+                    }
                 }
             });
 
-            // Melee Hit Detection for Real Players
             Object.keys(otherPlayers).forEach(id => {
                 let enemy = otherPlayers[id];
                 if (!enemy.isDead && Phaser.Math.Distance.Between(player.x, player.y, enemy.x, enemy.y) < 60) {
                     createHitEffect(scene, enemy.x, enemy.y, myColor, 10);
-                    channel.publish('hit', { targetId: id, damage: weapon.damage });
+                    channel.publish('hit', { targetId: id, damage: weapon.damage, shooterId: myId, shooterName: myName });
                 }
             });
 
@@ -280,7 +288,6 @@ function attemptFire(scene, pointer) {
         return; 
     }
 
-    // --- NORMAL GUN LOGIC ---
     if (ammoPool[currentWeapon] <= 0) { triggerReload(scene); return; }
 
     if (time > lastFired) {
@@ -310,16 +317,14 @@ function spawnBullet(scene, fromX, fromY, toX, toY, colorHex, speed, angle, isMi
     if (bullet) {
         bullet.setActive(true).setVisible(true).setTint(parseInt(colorHex)).setRotation(angle);
         bullet.isMine = isMine;
-        if (speed > 1500) bullet.setScale(2, 1);
-        else bullet.setScale(1, 1);
-
+        if (speed > 1500) bullet.setScale(2, 1); else bullet.setScale(1, 1);
         scene.physics.moveTo(bullet, toX, toY, speed);
         scene.time.delayedCall(lifespan, () => { if (bullet.active) bullet.destroy(); });
     }
 }
 
 function triggerReload(scene) {
-    if(WEAPONS[currentWeapon].reloadTime === 0) return; 
+    if(WEAPONS[currentWeapon].reloadTime === 0 || matchOver) return; 
     playSound('reload');
     isReloading = true; reloadText.setVisible(true); ammoText.setFill('#ff3366');
     scene.time.delayedCall(WEAPONS[currentWeapon].reloadTime, () => {
@@ -329,7 +334,7 @@ function triggerReload(scene) {
 }
 
 function handlePowerupPickup(pl, powerup) {
-    if (isDead) return;
+    if (isDead || matchOver) return;
     if (powerup.type === 'health' && player.health < 100) {
         player.health = Math.min(100, player.health + 50);
         this.cameras.main.flash(100, 0, 255, 0);
@@ -338,7 +343,7 @@ function handlePowerupPickup(pl, powerup) {
         this.cameras.main.flash(100, 0, 100, 255);
         updateAmmoUI();
     }
-    playSound('reload'); // Generic pickup sound
+    playSound('reload'); 
     channel.publish('clearItem', { id: powerup.itemId });
     powerup.destroy();
     sendNetworkUpdate();
@@ -355,6 +360,7 @@ function triggerDeath(scene) {
     sendNetworkUpdate();
 
     scene.time.delayedCall(3000, () => {
+        if (matchOver) return; // Don't respawn if match is over
         isDead = false; player.health = 100;
         myInventory.forEach(w => ammoPool[w] = WEAPONS[w].magSize); 
         updateAmmoUI();
@@ -362,6 +368,36 @@ function triggerDeath(scene) {
         player.setPosition(Math.random() * (MAP_SIZE-200) + 100, Math.random() * (MAP_SIZE-200) + 100);
         player.setVisible(true).body.enable = true;
         player.nameTag.setVisible(true); deathText.setVisible(false);
+        sendNetworkUpdate();
+    });
+}
+
+function triggerWinSequence(scene, winnerName) {
+    matchOver = true;
+    winnerText.setText(`${winnerName} WINS!`).setVisible(true);
+    
+    // Stop all movement
+    player.setVelocity(0);
+    
+    // 5 second delay before restarting
+    scene.time.delayedCall(5000, () => {
+        matchOver = false;
+        winnerText.setVisible(false);
+        deathText.setVisible(false);
+        
+        // Reset scores
+        myKills = 0;
+        Object.keys(playerScores).forEach(id => playerScores[id].kills = 0);
+        updateLeaderboardUI();
+
+        // Respawn and fully heal
+        isDead = false;
+        player.health = 100;
+        myInventory.forEach(w => ammoPool[w] = WEAPONS[w].magSize);
+        updateAmmoUI();
+        player.setPosition(Math.random() * (MAP_SIZE-200) + 100, Math.random() * (MAP_SIZE-200) + 100);
+        player.setVisible(true).body.enable = true;
+        player.nameTag.setVisible(true);
         sendNetworkUpdate();
     });
 }
@@ -380,22 +416,48 @@ function setupNetworking(scene) {
         enemy.setPosition(d.x, d.y).setRotation(d.rotation);
         enemy.health = d.health; enemy.isDead = d.isDead;
         enemy.setVisible(!d.isDead); enemy.nameTag.setVisible(!d.isDead);
+
+        // Keep leaderboard in sync if someone joins late
+        if (!playerScores[msg.clientId] || playerScores[msg.clientId].kills < d.kills) {
+            playerScores[msg.clientId] = { name: d.name, kills: d.kills || 0 };
+            updateLeaderboardUI();
+        }
     });
 
     channel.subscribe('shoot', (msg) => {
         if (msg.clientId === myId) return; let d = msg.data;
-        playSound('shoot'); // Hear other players shooting
+        playSound('shoot'); 
         spawnBullet(scene, d.x, d.y, d.targetX, d.targetY, d.color, d.speed, d.angle, false, d.lifespan);
     });
 
     channel.subscribe('hit', (msg) => {
         let d = msg.data;
-        if (d.targetId === myId && !isDead) {
+        if (d.targetId === myId && !isDead && !matchOver) {
             player.health -= d.damage;
             scene.cameras.main.flash(50, 255, 0, 0);
-            playSound('hit'); // Hear getting hit
-            if (player.health <= 0) triggerDeath(scene);
+            playSound('hit'); 
+            if (player.health <= 0) {
+                // Tell everyone WHO killed me
+                channel.publish('kill', { killerId: d.shooterId, killerName: d.shooterName, victimName: myName });
+                triggerDeath(scene);
+            }
             else sendNetworkUpdate();
+        }
+    });
+
+    // --- NEW: KILL TRACKING ---
+    channel.subscribe('kill', (msg) => {
+        let d = msg.data;
+        if (!playerScores[d.killerId]) playerScores[d.killerId] = { name: d.killerName, kills: 0 };
+        
+        playerScores[d.killerId].kills++;
+        if (d.killerId === myId) myKills = playerScores[myId].kills;
+        
+        updateLeaderboardUI();
+
+        // Check Win Condition
+        if (playerScores[d.killerId].kills >= KILLS_TO_WIN) {
+            triggerWinSequence(scene, d.killerName);
         }
     });
 
@@ -415,15 +477,29 @@ function setupNetworking(scene) {
             otherPlayers[member.clientId].healthBar.destroy();
             otherPlayers[member.clientId].destroy();
             delete otherPlayers[member.clientId];
+            delete playerScores[member.clientId]; // Remove from leaderboard
+            updateLeaderboardUI();
         }
     });
     channel.presence.enter();
 }
 
+function updateLeaderboardUI() {
+    // Sort players by highest kills
+    let sorted = Object.values(playerScores).sort((a, b) => b.kills - a.kills).slice(0, 5); // Top 5
+    
+    let text = "--- GOAL: " + KILLS_TO_WIN + " KILLS ---\n\n";
+    sorted.forEach((p, i) => {
+        text += `${i+1}. ${p.name}: ${p.kills}\n`;
+    });
+    
+    leaderboardText.setText(text);
+}
+
 function updateAmmoUI() {
     if (currentWeapon === 'knife') {
         ammoText.setText(`AMMO: N/A`);
-        ammoText.setFill('#666666'); // Grey out when knife is equipped
+        ammoText.setFill('#666666'); 
     } else {
         ammoText.setText(`AMMO: ${ammoPool[currentWeapon]} / ${WEAPONS[currentWeapon].magSize}`);
         ammoText.setFill(ammoPool[currentWeapon] === 0 ? '#ff3366' : '#0066ff');
@@ -438,7 +514,8 @@ function createHitEffect(scene, x, y, color, size) {
 
 function sendNetworkUpdate() {
     if (!channel) return;
-    channel.publish('update', { x: player.x, y: player.y, rotation: player.rotation, name: myName, color: myColor, health: player.health, isDead: isDead });
+    // Added kills to network update so late-joiners can see your score
+    channel.publish('update', { x: player.x, y: player.y, rotation: player.rotation, name: myName, color: myColor, health: player.health, isDead: isDead, kills: myKills });
 }
 
 function updateDynamicUI(sprite, isLocal) {
