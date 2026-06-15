@@ -80,13 +80,12 @@ function startGame() {
     myColor = document.getElementById('playerColor').value;
     myWeapon = document.getElementById('weaponType').value;
 
+    // Hide the lobby
     document.getElementById('lobby').style.display = 'none';
-    document.querySelector('canvas').style.display = 'block';
 
-    // Boot up Phaser Game
+    // Boot up Phaser Game (This creates the canvas automatically!)
     new Phaser.Game(config);
 }
-
 const config = {
     type: Phaser.AUTO,
     width: 900,
