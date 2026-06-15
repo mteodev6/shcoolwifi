@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>School Wi-Fi Showdown</title>
+        <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+        <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
+        <style>
+            body {
+                margin: 0;
+                background: #222;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+                overflow: hidden;
+                font-family: sans-serif;
+            }
+            canvas {
+                box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+            }
+        </style>
+    </head>
+    <body>
+        <script>
+            // --- Configuration ---
+            const ABLY_KEY =
+                "mWq-qg.aSAwag:CfLtHjHdS9lBnkqrB9RzytbXrCK76hPhXFoFWa8c65g"; // <-- Put your Ably API key here!
+            const ROOM_NAME = "school-arena";
+
+            const config = {
+                type: Phaser.AUTO,
+                width: 800,
+                height: 600,
+                physics: {
+                    default: "arcade",
+                    arcade: { gravity: { y: 0 }, debug: false },
+                },
+                scene: { preload: preload, create: create, update: update },
+            };
+
+            const game = new Phaser.Game(config);
+
+            let ably, channel;
+            let myId = "player_" + Math.random().toString(36).substr(2, 9);
+            let player;
+            let otherPlayers = {};
+            let cursors;
+            let bullets;
+            let lastFired = 0;
+
+            function preload() {
+                // Generate simple textures on the fly so we don't need external image assets
+                let canvas = this.textures.createCanvas("player", 32, 32);
+                canvas.context.fillStyle = "#00ffcc";
+                canvas.context.fillRect(0, 0, 32, 32);
+                canvas.refresh();
+
+                let enemyCanvas = this.textures.createCanvas("enemy", 32, 32);
+                enemyCanvas.context.fillStyle = "#ff3366";
+                enemyCanvas.context.fillRect(0, 0, 32, 32);
+                enemyCanvas.refresh();
+
+                let bulletCanvas = this.textures.createCanvas("bullet", 8, 8);
+                bulletCanvas.context.fillStyle = "#ffff00";
+                bulletCanvas.context.fillRect(0, 0, 8, 8);
+                bulletCanvas.refresh();
+            }
+
+            function create() {
+                // 1. Setup Local Player
+                player = this.physics.add.sprite(
+                    Math.random() * 700 + 50,
+                    Math.random() * 500 + 50,
+                    "player",
+                );
+                player.setCollideWorldBounds(true);
+
+                // 2. Setup Controls
+                cursors = this.input.keyboard.createCursorKeys();
+                this.input.on("pointerdown", fireBullet, this);
+
+                // 3. Setup Bullets Group
+                bullets = this.physics.add.group({
+                    defaultKey: "bullet",
+                    maxSize: 30,
+                });
+
+                // 4. Connect to Ably Realtime Network
+                ably = new Ably.Realtime({ key: ABLY_KEY, clientId: myId });
+                channel = ably.channels.get(ROOM_NAME);
+
+                // Listen for other players moving or shooting
+                channel.subscribe("update", (message) => {
+                    if (message.clientId === myId) return; // Skip our own messages
+
+                    let data = message.data;
+                    if (!otherPlayers[message.clientId]) {
+                        // Create enemy sprite if they don't exist yet
+                        otherPlayers[message.clientId] =
+                            this.physics.add.sprite(data.x, data.y, "enemy");
+                    } else {
+                        // Update existing enemy position
+                        otherPlayers[message.clientId].setPosition(
+                            data.x,
+                            data.y,
+                        );
+                    }
+                });
+
+                channel.subscribe("shoot", (message) => {
+                    if (message.clientId === myId) return;
+                    spawnBullet(
+                        this,
+                        message.data.x,
+                        message.data.y,
+                        message.data.targetX,
+                        message.data.targetY,
+                    );
+                });
+
+                // Handle player disconnecting
+                channel.presence.subscribe("leave", (member) => {
+                    if (otherPlayers[member.clientId]) {
+                        otherPlayers[member.clientId].destroy();
+                        delete otherPlayers[member.clientId];
+                    }
+                });
+                channel.presence.enter();
+            }
+
+            function update(time) {
+                let speed = 250;
+                let moved = false;
+
+                player.setVelocity(0);
+
+                if (
+                    cursors.left.isDown ||
+                    this.input.keyboard.addKey("A").isDown
+                ) {
+                    player.setVelocityX(-speed);
+                    moved = true;
+                } else if (
+                    cursors.right.isDown ||
+                    this.input.keyboard.addKey("D").isDown
+                ) {
+                    player.setVelocityX(speed);
+                    moved = true;
+                }
+
+                if (
+                    cursors.up.isDown ||
+                    this.input.keyboard.addKey("W").isDown
+                ) {
+                    player.setVelocityY(-speed);
+                    moved = true;
+                } else if (
+                    cursors.down.isDown ||
+                    this.input.keyboard.addKey("S").isDown
+                ) {
+                    player.setVelocityY(speed);
+                    moved = true;
+                }
+
+                // Broadcast position to everyone else if we moved (capped roughly to frame rate)
+                if (moved && channel) {
+                    channel.publish("update", { x: player.x, y: player.y });
+                }
+            }
+
+            function fireBullet(pointer) {
+                let time = game.loop.time;
+                if (time > lastFired) {
+                    spawnBullet(this, player.x, player.y, pointer.x, pointer.y);
+
+                    // Broadcast the shot to other players
+                    if (channel) {
+                        channel.publish("shoot", {
+                            x: player.x,
+                            y: player.y,
+                            targetX: pointer.x,
+                            targetY: pointer.y,
+                        });
+                    }
+                    lastFired = time + 300; // Cooldown of 300ms
+                }
+            }
+
+            function spawnBullet(scene, fromX, fromY, toX, toY) {
+                let bullet = bullets.get(fromX, fromY);
+                if (bullet) {
+                    bullet.setActive(true);
+                    bullet.setVisible(true);
+                    scene.physics.moveTo(bullet, toX, toY, 500);
+
+                    // Destroy bullet after 2 seconds so it doesn't fly forever
+                    scene.time.delayedCall(2000, () => {
+                        if (bullet) bullet.destroy();
+                    });
+                }
+            }
+        </script>
+    </body>
+</html>
