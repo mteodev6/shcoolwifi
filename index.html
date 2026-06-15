@@ -1,345 +1,704 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Neon Arena: Reloaded</title>
-    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
-    <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
-    <style>
-        body { margin: 0; background: #050508; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; font-family: 'Segoe UI', Tahoma, sans-serif; color: #fff; }
-        canvas { box-shadow: 0 0 40px rgba(0, 255, 204, 0.15); border: 2px solid #222; border-radius: 8px; }
-        
-        #lobby { background: rgba(10, 10, 18, 0.95); padding: 30px; border-radius: 12px; border: 2px solid #00ffcc; text-align: center; box-shadow: 0 0 20px rgba(0, 255, 204, 0.3); width: 320px; z-index: 10; position: absolute; }
-        h2 { margin-top: 0; color: #00ffcc; letter-spacing: 2px; }
-        input, select { width: 100%; padding: 10px; margin: 12px 0; border-radius: 6px; border: 1px solid #444; background: #1a1a2e; color: #fff; font-size: 16px; box-sizing: border-box; }
-        input:focus, select:focus { border-color: #00ffcc; outline: none; }
-        button { width: 100%; padding: 12px; background: #00ffcc; color: #0a0a12; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.2s; }
-        button:hover { background: #00ccff; box-shadow: 0 0 15px #00ccff; }
-        label { display: block; text-align: left; font-size: 14px; color: #aaa; margin-bottom: -4px; }
-    </style>
-</head>
-<body>
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Neon Arena</title>
+        <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+        <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
+        <style>
+            body {
+                margin: 0;
+                background: #050508;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+                overflow: hidden;
+                font-family: "Segoe UI", Tahoma, sans-serif;
+                color: #fff;
+            }
+            canvas {
+                box-shadow: 0 0 40px rgba(0, 255, 204, 0.15);
+                border: 2px solid #222;
+                border-radius: 8px;
+            }
 
-<div id="lobby">
-    <h2>NEON ARENA</h2>
-    <label for="username">Username</label>
-    <input type="text" id="username" placeholder="Player" maxlength="12">
-    
-    <label for="playerColor">Character Color</label>
-    <select id="playerColor">
-        <option value="0x00ffcc">Cyan Neon</option>
-        <option value="0xff3366">Hot Pink</option>
-        <option value="0xffff00">Laser Yellow</option>
-        <option value="0x9933ff">Electric Purple</option>
-        <option value="0x33ff33">Matrix Green</option>
-    </select>
+            #lobby {
+                background: rgba(10, 10, 18, 0.95);
+                padding: 30px;
+                border-radius: 12px;
+                border: 2px solid #00ffcc;
+                text-align: center;
+                box-shadow: 0 0 20px rgba(0, 255, 204, 0.3);
+                width: 320px;
+                z-index: 10;
+                position: absolute;
+            }
+            h2 {
+                margin-top: 0;
+                color: #00ffcc;
+                letter-spacing: 2px;
+            }
+            input,
+            select {
+                width: 100%;
+                padding: 10px;
+                margin: 12px 0;
+                border-radius: 6px;
+                border: 1px solid #444;
+                background: #1a1a2e;
+                color: #fff;
+                font-size: 16px;
+                box-sizing: border-box;
+            }
+            input:focus,
+            select:focus {
+                border-color: #00ffcc;
+                outline: none;
+            }
+            button {
+                width: 100%;
+                padding: 12px;
+                background: #00ffcc;
+                color: #0a0a12;
+                border: none;
+                border-radius: 6px;
+                font-size: 16px;
+                font-weight: bold;
+                cursor: pointer;
+                transition: 0.2s;
+            }
+            button:hover {
+                background: #00ccff;
+                box-shadow: 0 0 15px #00ccff;
+            }
+            label {
+                display: block;
+                text-align: left;
+                font-size: 14px;
+                color: #aaa;
+                margin-bottom: -4px;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="lobby">
+            <h2>NEON ARENA</h2>
+            <label for="username">Username</label>
+            <input
+                type="text"
+                id="username"
+                placeholder="Player"
+                maxlength="12"
+            />
 
-    <label for="weaponType">Starting Loadout</label>
-    <select id="weaponType">
-        <option value="pistol">Pistol (12 Ammo, Balanced)</option>
-        <option value="smg">SMG (30 Ammo, Fast Fire)</option>
-        <option value="shotgun">Shotgun (6 Ammo, Spread)</option>
-    </select>
-    
-    <button onclick="startGame()">SPAWN INTO ARENA</button>
-</div>
+            <label for="playerColor">Color</label>
+            <select id="playerColor">
+                <option value="0x00ffcc">Cyan</option>
+                <option value="0xff3366">Pink</option>
+                <option value="0xffff00">Yellow</option>
+                <option value="0x9933ff">Purple</option>
+            </select>
 
-<script>
-// --- Configuration ---
-const ABLY_KEY = 'mWq-qg.aSAwag:CfLtHjHdS9lBnkqrB9RzytbXrCK76hPhXFoFWa8c65g'; // <-- PUT YOUR FULLY CAPABLE KEY HERE!
-const ROOM_NAME = 'school-arena-v2';
+            <label for="weaponType">Weapon</label>
+            <select id="weaponType">
+                <option value="smg">SMG (30 Ammo, Auto-Fire)</option>
+                <option value="pistol">Pistol (12 Ammo, Heavy)</option>
+                <option value="shotgun">Shotgun (6 Ammo, Spread)</option>
+            </select>
 
-// Upgraded Weapons with Ammo & Reload times
-const WEAPONS = {
-    pistol:  { cooldown: 350, speed: 700, damage: 25, spread: 0, count: 1, magSize: 12, reloadTime: 1200 },
-    smg:     { cooldown: 100, speed: 800, damage: 10, spread: 0.1, count: 1, magSize: 30, reloadTime: 1500 },
-    shotgun: { cooldown: 800, speed: 600, damage: 15, spread: 0.25, count: 5, magSize: 6, reloadTime: 2000 }
-};
+            <button onclick="startGame()">ENTER ARENA</button>
+        </div>
 
-let ably, channel;
-let myId = 'player_' + Math.random().toString(36).substr(2, 9);
-let player, otherPlayers = {}, bullets;
-let cursors, wasd, reloadKey;
-let lastFired = 0, lastNetUpdate = 0;
-const NET_TICK_RATE = 50; 
+        <script>
+            // --- Config ---
+            const ABLY_KEY =
+                "mWq-qg.aSAwag:CfLtHjHdS9lBnkqrB9RzytbXrCK76hPhXFoFWa8c65g"; // <--- PUT KEY HERE
+            const ROOM_NAME = "school-arena-tactical";
 
-// Player State
-let myName = "Player";
-let myColor = "0x00ffcc";
-let myWeapon = "pistol";
-let currentAmmo = 12;
-let isReloading = false;
+            const WEAPONS = {
+                pistol: {
+                    cooldown: 350,
+                    speed: 800,
+                    damage: 30,
+                    spread: 0,
+                    count: 1,
+                    magSize: 12,
+                    reloadTime: 1200,
+                },
+                smg: {
+                    cooldown: 100,
+                    speed: 900,
+                    damage: 12,
+                    spread: 0.12,
+                    count: 1,
+                    magSize: 30,
+                    reloadTime: 2500,
+                },
+                shotgun: {
+                    cooldown: 800,
+                    speed: 700,
+                    damage: 15,
+                    spread: 0.25,
+                    count: 5,
+                    magSize: 6,
+                    reloadTime: 2000,
+                },
+            };
 
-// UI Elements
-let ammoText, reloadText;
+            let ably, channel;
+            let myId = "player_" + Math.random().toString(36).substr(2, 9);
+            let player,
+                otherPlayers = {},
+                bullets,
+                walls,
+                powerups;
+            let cursors, wasd, reloadKey;
+            let lastFired = 0,
+                lastNetUpdate = 0;
+            const NET_TICK_RATE = 50;
 
-function startGame() {
-    const nameInput = document.getElementById('username').value.trim();
-    if(nameInput) myName = nameInput;
-    myColor = document.getElementById('playerColor').value;
-    myWeapon = document.getElementById('weaponType').value;
-    
-    // Set initial ammo based on chosen weapon
-    currentAmmo = WEAPONS[myWeapon].magSize;
+            // Player State
+            let myName = "Player",
+                myColor = "0x00ffcc",
+                myWeapon = "smg";
+            let currentAmmo = 30,
+                isReloading = false,
+                isDead = false;
 
-    document.getElementById('lobby').style.display = 'none';
-    new Phaser.Game(config);
-}
+            // UI
+            let ammoText, reloadText, deathText;
 
-const config = {
-    type: Phaser.AUTO,
-    width: 900,
-    height: 650,
-    backgroundColor: '#050508',
-    physics: { default: 'arcade', arcade: { debug: false } },
-    scene: { preload: preload, create: create, update: update }
-};
+            function startGame() {
+                if (document.getElementById("username").value.trim())
+                    myName = document.getElementById("username").value.trim();
+                myColor = document.getElementById("playerColor").value;
+                myWeapon = document.getElementById("weaponType").value;
+                currentAmmo = WEAPONS[myWeapon].magSize;
 
-function preload() {
-    // 1. Draw a cool Top-Down Player (Circle body + Gun Barrel)
-    let g = this.make.graphics({x: 0, y: 0, add: false});
-    g.fillStyle(0xffffff, 1);
-    g.fillCircle(20, 20, 16); // Body
-    g.fillStyle(0xdddddd, 1);
-    g.fillRect(20, 14, 26, 12); // Gun barrel pointing right (0 degrees)
-    g.generateTexture('base_player', 50, 40);
+                document.getElementById("lobby").style.display = "none";
+                new Phaser.Game(config);
+            }
 
-    // 2. Draw a glowing bullet capsule
-    let bg = this.make.graphics({x: 0, y: 0, add: false});
-    bg.fillStyle(0xffffff, 1);
-    bg.fillRoundedRect(0, 0, 16, 6, 3);
-    bg.generateTexture('bullet', 16, 6);
-}
+            const config = {
+                type: Phaser.AUTO,
+                width: 900,
+                height: 650,
+                backgroundColor: "#050508",
+                physics: { default: "arcade", arcade: { debug: false } },
+                scene: { preload: preload, create: create, update: update },
+            };
 
-function create() {
-    // 1. Draw Neon Background Grid
-    this.add.grid(450, 325, 900, 650, 50, 50, 0x000000, 0, 0x00ffcc, 0.05);
+            function preload() {
+                // Player Model
+                let g = this.make.graphics({ x: 0, y: 0, add: false });
+                g.fillStyle(0xffffff, 1);
+                g.fillCircle(20, 20, 16);
+                g.fillStyle(0xdddddd, 1);
+                g.fillRect(20, 14, 26, 12);
+                g.generateTexture("base_player", 50, 40);
 
-    ably = new Ably.Realtime({ key: ABLY_KEY, clientId: myId });
-    channel = ably.channels.get(ROOM_NAME);
+                // Bullet
+                let bg = this.make.graphics({ x: 0, y: 0, add: false });
+                bg.fillStyle(0xffffff, 1);
+                bg.fillRoundedRect(0, 0, 16, 6, 3);
+                bg.generateTexture("bullet", 16, 6);
 
-    // 2. Setup Local Player
-    player = this.physics.add.sprite(Math.random() * 800 + 50, Math.random() * 550 + 50, 'base_player');
-    player.setCollideWorldBounds(true);
-    player.setTint(parseInt(myColor));
-    player.health = 100;
-    
-    player.nameTag = this.add.text(0, 0, myName, { fontSize: '14px', fontStyle: 'bold', fill: '#ffffff' }).setOrigin(0.5);
-    player.healthBar = this.add.graphics();
+                // Wall Texture
+                let wg = this.make.graphics({ x: 0, y: 0, add: false });
+                wg.fillStyle(0x111118, 1);
+                wg.fillRect(0, 0, 50, 50);
+                wg.lineStyle(2, 0x00ffcc, 0.5);
+                wg.strokeRect(0, 0, 50, 50);
+                wg.generateTexture("wall", 50, 50);
 
-    // 3. Static UI (Ammo Counter) anchored to screen
-    ammoText = this.add.text(20, 600, `AMMO: ${currentAmmo} / ${WEAPONS[myWeapon].magSize}`, { fontSize: '24px', fontStyle: 'bold', fill: '#00ffcc' }).setScrollFactor(0);
-    reloadText = this.add.text(450, 325, 'RELOADING...', { fontSize: '32px', fontStyle: 'bold', fill: '#ff3366' }).setOrigin(0.5).setVisible(false).setScrollFactor(0);
+                // Powerup Textures (Green Health, Blue Ammo)
+                let hg = this.make.graphics({ x: 0, y: 0, add: false });
+                hg.fillStyle(0x33ff33, 1);
+                hg.fillRect(0, 0, 20, 20);
+                hg.fillStyle(0xffffff, 1);
+                hg.fillRect(8, 4, 4, 12);
+                hg.fillRect(4, 8, 12, 4);
+                hg.generateTexture("healthPack", 20, 20);
 
-    bullets = this.physics.add.group({ defaultKey: 'bullet' });
+                let ag = this.make.graphics({ x: 0, y: 0, add: false });
+                ag.fillStyle(0x33ccff, 1);
+                ag.fillRect(0, 0, 20, 20);
+                ag.fillStyle(0xffffff, 1);
+                ag.fillCircle(10, 10, 6);
+                ag.generateTexture("ammoPack", 20, 20);
+            }
 
-    // 4. Setup Controls
-    cursors = this.input.keyboard.createCursorKeys();
-    wasd = this.input.keyboard.addKeys({ W: Phaser.Input.Keyboard.KeyCodes.W, S: Phaser.Input.Keyboard.KeyCodes.S, A: Phaser.Input.Keyboard.KeyCodes.A, D: Phaser.Input.Keyboard.KeyCodes.D });
-    reloadKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
-    
-    this.input.on('pointerdown', attemptFire, this);
+            function create() {
+                this.add.grid(
+                    450,
+                    325,
+                    900,
+                    650,
+                    50,
+                    50,
+                    0x000000,
+                    0,
+                    0x00ffcc,
+                    0.03,
+                );
 
-    // 5. Network Subscriptions
-    channel.subscribe('update', (message) => {
-        if (message.clientId === myId) return;
-        let d = message.data;
-        
-        if (!otherPlayers[message.clientId]) {
-            let enemy = this.physics.add.sprite(d.x, d.y, 'base_player');
-            enemy.setTint(parseInt(d.color));
-            enemy.health = d.health;
-            enemy.nameTag = this.add.text(0, 0, d.name, { fontSize: '13px', fill: '#ffffff' }).setOrigin(0.5);
-            enemy.healthBar = this.add.graphics();
-            otherPlayers[message.clientId] = enemy;
-        } else {
-            let enemy = otherPlayers[message.clientId];
-            // Animate movement slightly for smoother graphics
-            enemy.setPosition(d.x, d.y);
-            enemy.setRotation(d.rotation); // Apply their mouse aim rotation!
-            enemy.health = d.health;
-        }
-    });
+                ably = new Ably.Realtime({ key: ABLY_KEY, clientId: myId });
+                channel = ably.channels.get(ROOM_NAME);
 
-    channel.subscribe('shoot', (message) => {
-        if (message.clientId === myId) return;
-        let d = message.data;
-        spawnBullet(this, d.x, d.y, d.targetX, d.targetY, d.color, d.speed, d.angle, false);
-    });
+                // 1. Setup Structures (Walls)
+                walls = this.physics.add.staticGroup();
+                const wallPositions = [
+                    { x: 200, y: 200 },
+                    { x: 200, y: 250 },
+                    { x: 200, y: 300 }, // Left Cover
+                    { x: 700, y: 350 },
+                    { x: 700, y: 400 },
+                    { x: 700, y: 450 }, // Right Cover
+                    { x: 450, y: 100 },
+                    { x: 450, y: 550 }, // Top/Bottom blocks
+                    { x: 450, y: 325 }, // Center pillar
+                ];
+                wallPositions.forEach((pos) =>
+                    walls.create(pos.x, pos.y, "wall"),
+                );
 
-    channel.subscribe('hit', (message) => {
-        let d = message.data;
-        if (d.targetId === myId) {
-            player.health -= d.damage;
-            this.cameras.main.flash(50, 255, 0, 0); // Brief red flash
-
-            if (player.health <= 0) {
+                // 2. Setup Player & Entities
+                player = this.physics.add.sprite(
+                    Math.random() * 800 + 50,
+                    Math.random() * 550 + 50,
+                    "base_player",
+                );
+                player.setCollideWorldBounds(true).setTint(parseInt(myColor));
                 player.health = 100;
-                player.setPosition(Math.random() * 800 + 50, Math.random() * 550 + 50);
-                currentAmmo = WEAPONS[myWeapon].magSize; // Refill ammo on death
-                updateAmmoUI();
+                player.nameTag = this.add
+                    .text(0, 0, myName, {
+                        fontSize: "14px",
+                        fontStyle: "bold",
+                        fill: "#ffffff",
+                    })
+                    .setOrigin(0.5);
+                player.healthBar = this.add.graphics();
+
+                bullets = this.physics.add.group({ defaultKey: "bullet" });
+                powerups = this.physics.add.group();
+
+                // 3. Collisions
+                this.physics.add.collider(player, walls);
+                this.physics.add.collider(bullets, walls, (bullet, wall) => {
+                    createHitEffect(this, bullet.x, bullet.y, "#ffffff", 5); // Sparks on wall hit
+                    bullet.destroy();
+                });
+
+                // Powerup Collection logic
+                this.physics.add.overlap(player, powerups, (pl, powerup) => {
+                    if (isDead) return;
+                    if (powerup.type === "health" && player.health < 100) {
+                        player.health = Math.min(100, player.health + 50);
+                        this.cameras.main.flash(100, 0, 255, 0); // Green flash
+                    } else if (powerup.type === "ammo") {
+                        currentAmmo = WEAPONS[myWeapon].magSize;
+                        this.cameras.main.flash(100, 0, 200, 255); // Blue flash
+                        updateAmmoUI();
+                    }
+                    channel.publish("clearItem", { id: powerup.itemId });
+                    powerup.destroy();
+                    sendNetworkUpdate(); // Show new health instantly
+                });
+
+                // 4. UI Setup
+                ammoText = this.add
+                    .text(
+                        20,
+                        600,
+                        `AMMO: ${currentAmmo} / ${WEAPONS[myWeapon].magSize}`,
+                        {
+                            fontSize: "24px",
+                            fontStyle: "bold",
+                            fill: "#00ffcc",
+                        },
+                    )
+                    .setDepth(100);
+                reloadText = this.add
+                    .text(450, 325, "RELOADING...", {
+                        fontSize: "32px",
+                        fontStyle: "bold",
+                        fill: "#ff3366",
+                    })
+                    .setOrigin(0.5)
+                    .setVisible(false)
+                    .setDepth(100);
+                deathText = this.add
+                    .text(450, 325, "YOU DIED\nRespawning...", {
+                        fontSize: "40px",
+                        fontStyle: "bold",
+                        fill: "#ff3366",
+                        align: "center",
+                    })
+                    .setOrigin(0.5)
+                    .setVisible(false)
+                    .setDepth(100);
+
+                // 5. Controls
+                cursors = this.input.keyboard.createCursorKeys();
+                wasd = this.input.keyboard.addKeys({
+                    W: Phaser.Input.Keyboard.KeyCodes.W,
+                    S: Phaser.Input.Keyboard.KeyCodes.S,
+                    A: Phaser.Input.Keyboard.KeyCodes.A,
+                    D: Phaser.Input.Keyboard.KeyCodes.D,
+                });
+                reloadKey = this.input.keyboard.addKey(
+                    Phaser.Input.Keyboard.KeyCodes.R,
+                );
+
+                // 6. Networking Subscriptions
+                channel.subscribe("update", (msg) => {
+                    if (msg.clientId === myId) return;
+                    let d = msg.data;
+                    if (!otherPlayers[msg.clientId]) {
+                        let enemy = this.physics.add.sprite(
+                            d.x,
+                            d.y,
+                            "base_player",
+                        );
+                        enemy.setTint(parseInt(d.color));
+                        enemy.nameTag = this.add
+                            .text(0, 0, d.name, {
+                                fontSize: "13px",
+                                fill: "#ffffff",
+                            })
+                            .setOrigin(0.5);
+                        enemy.healthBar = this.add.graphics();
+                        otherPlayers[msg.clientId] = enemy;
+                    }
+                    let enemy = otherPlayers[msg.clientId];
+                    enemy.setPosition(d.x, d.y).setRotation(d.rotation);
+                    enemy.health = d.health;
+                    enemy.isDead = d.isDead; // Track their death state
+
+                    // Hide enemy entirely if they are dead
+                    enemy.setVisible(!d.isDead);
+                    enemy.nameTag.setVisible(!d.isDead);
+                });
+
+                channel.subscribe("shoot", (msg) => {
+                    if (msg.clientId === myId) return;
+                    let d = msg.data;
+                    spawnBullet(
+                        this,
+                        d.x,
+                        d.y,
+                        d.targetX,
+                        d.targetY,
+                        d.color,
+                        d.speed,
+                        d.angle,
+                        false,
+                    );
+                });
+
+                channel.subscribe("hit", (msg) => {
+                    let d = msg.data;
+                    if (d.targetId === myId && !isDead) {
+                        player.health -= d.damage;
+                        this.cameras.main.shake(50, 0.005);
+                        this.cameras.main.flash(50, 255, 0, 0);
+
+                        if (player.health <= 0) triggerDeath(this);
+                        else sendNetworkUpdate();
+                    }
+                });
+
+                // Spawn & Clear loot over network
+                channel.subscribe("dropItem", (msg) => {
+                    let p = powerups.create(
+                        msg.data.x,
+                        msg.data.y,
+                        msg.data.type === "health" ? "healthPack" : "ammoPack",
+                    );
+                    p.type = msg.data.type;
+                    p.itemId = msg.data.id;
+                });
+
+                channel.subscribe("clearItem", (msg) => {
+                    powerups.getChildren().forEach((p) => {
+                        if (p.itemId === msg.data.id) p.destroy();
+                    });
+                });
+
+                channel.presence.subscribe("leave", (member) => {
+                    if (otherPlayers[member.clientId]) {
+                        otherPlayers[member.clientId].nameTag.destroy();
+                        otherPlayers[member.clientId].healthBar.destroy();
+                        otherPlayers[member.clientId].destroy();
+                        delete otherPlayers[member.clientId];
+                    }
+                });
+                channel.presence.enter();
             }
-            sendNetworkUpdate();
-        }
-    });
 
-    channel.presence.subscribe('leave', (member) => {
-        if (otherPlayers[member.clientId]) {
-            otherPlayers[member.clientId].nameTag.destroy();
-            otherPlayers[member.clientId].healthBar.destroy();
-            otherPlayers[member.clientId].destroy();
-            delete otherPlayers[member.clientId];
-        }
-    });
-    channel.presence.enter();
-}
+            function update(time) {
+                if (!player || isDead) return; // Prevent actions if dead
 
-function update(time) {
-    if (!player) return;
+                // Movement Logic
+                let speed = 260;
+                player.setVelocity(0);
+                if (cursors.left.isDown || wasd.A.isDown)
+                    player.setVelocityX(-speed);
+                else if (cursors.right.isDown || wasd.D.isDown)
+                    player.setVelocityX(speed);
+                if (cursors.up.isDown || wasd.W.isDown)
+                    player.setVelocityY(-speed);
+                else if (cursors.down.isDown || wasd.S.isDown)
+                    player.setVelocityY(speed);
 
-    // Movement Logic
-    let speed = 260;
-    player.setVelocity(0);
-    if (cursors.left.isDown || wasd.A.isDown) player.setVelocityX(-speed);
-    else if (cursors.right.isDown || wasd.D.isDown) player.setVelocityX(speed);
-    if (cursors.up.isDown || wasd.W.isDown) player.setVelocityY(-speed);
-    else if (cursors.down.isDown || wasd.S.isDown) player.setVelocityY(speed);
+                // Look at Mouse
+                let pointer = this.input.activePointer;
+                player.setRotation(
+                    Phaser.Math.Angle.Between(
+                        player.x,
+                        player.y,
+                        pointer.x,
+                        pointer.y,
+                    ),
+                );
 
-    // Look at Mouse Pointer (Rotates the player graphic!)
-    let pointer = this.input.activePointer;
-    player.setRotation(Phaser.Math.Angle.Between(player.x, player.y, pointer.x, pointer.y));
+                // AUTO-FIRE LOGIC: Replaces 'pointerdown' event
+                if (pointer.isDown) attemptFire(this, pointer);
 
-    // Manual Reload Logic
-    if (Phaser.Input.Keyboard.JustDown(reloadKey) && !isReloading && currentAmmo < WEAPONS[myWeapon].magSize) {
-        triggerReload(this);
-    }
+                // Manual Reload
+                if (
+                    Phaser.Input.Keyboard.JustDown(reloadKey) &&
+                    !isReloading &&
+                    currentAmmo < WEAPONS[myWeapon].magSize
+                ) {
+                    triggerReload(this);
+                }
 
-    // Update UI tracking
-    updateDynamicUI(player, true);
-    Object.keys(otherPlayers).forEach(id => {
-        let enemy = otherPlayers[id];
-        updateDynamicUI(enemy, false);
+                // UI and Network Updates
+                updateDynamicUI(player, true);
+                Object.keys(otherPlayers).forEach((id) => {
+                    let enemy = otherPlayers[id];
+                    updateDynamicUI(enemy, false);
 
-        // Hit Detection
-        this.physics.overlap(bullets, enemy, (enemySprite, bulletSprite) => {
-            if (bulletSprite.isMine) {
-                bulletSprite.destroy();
-                createHitEffect(this, bulletSprite.x, bulletSprite.y, myColor);
-                channel.publish('hit', { targetId: id, damage: WEAPONS[myWeapon].damage });
+                    // Player to Player Hit Detection
+                    if (!enemy.isDead) {
+                        this.physics.overlap(
+                            bullets,
+                            enemy,
+                            (enemySprite, bulletSprite) => {
+                                if (bulletSprite.isMine) {
+                                    bulletSprite.destroy();
+                                    createHitEffect(
+                                        this,
+                                        bulletSprite.x,
+                                        bulletSprite.y,
+                                        myColor,
+                                        10,
+                                    );
+                                    channel.publish("hit", {
+                                        targetId: id,
+                                        damage: WEAPONS[myWeapon].damage,
+                                    });
+                                }
+                            },
+                        );
+                    }
+                });
+
+                if (time > lastNetUpdate + NET_TICK_RATE) {
+                    sendNetworkUpdate();
+                    lastNetUpdate = time;
+                }
             }
-        });
-    });
 
-    // Network Broadcast Loop
-    if (time > lastNetUpdate + NET_TICK_RATE) {
-        sendNetworkUpdate();
-        lastNetUpdate = time;
-    }
-}
+            function attemptFire(scene, pointer) {
+                if (isReloading || isDead) return;
+                if (currentAmmo <= 0) {
+                    triggerReload(scene);
+                    return;
+                }
 
-function attemptFire(pointer) {
-    if (isReloading) return;
-    
-    // Auto-reload if empty
-    if (currentAmmo <= 0) {
-        triggerReload(this.scene.scene);
-        return;
-    }
+                let time = scene.time.now;
+                let weapon = WEAPONS[myWeapon];
 
-    let time = this.time.now;
-    let weapon = WEAPONS[myWeapon];
+                if (time > lastFired) {
+                    currentAmmo--;
+                    updateAmmoUI();
+                    scene.cameras.main.shake(50, 0.003);
 
-    if (time > lastFired) {
-        currentAmmo--;
-        updateAmmoUI();
-        
-        // Add game juice: Screen Shake
-        this.cameras.main.shake(100, 0.005);
+                    let baseAngle = Phaser.Math.Angle.Between(
+                        player.x,
+                        player.y,
+                        pointer.x,
+                        pointer.y,
+                    );
 
-        let baseAngle = Phaser.Math.Angle.Between(player.x, player.y, pointer.x, pointer.y);
+                    for (let i = 0; i < weapon.count; i++) {
+                        let spreadAngle =
+                            baseAngle +
+                            Phaser.Math.FloatBetween(
+                                -weapon.spread,
+                                weapon.spread,
+                            );
+                        let targetX = player.x + Math.cos(spreadAngle) * 1000;
+                        let targetY = player.y + Math.sin(spreadAngle) * 1000;
 
-        for (let i = 0; i < weapon.count; i++) {
-            let spreadAngle = baseAngle + Phaser.Math.FloatBetween(-weapon.spread, weapon.spread);
-            // Calculate a point far away in the direction of the angle
-            let targetX = player.x + Math.cos(spreadAngle) * 1000;
-            let targetY = player.y + Math.sin(spreadAngle) * 1000;
-
-            spawnBullet(this, player.x, player.y, targetX, targetY, myColor, weapon.speed, spreadAngle, true);
-            
-            if (channel) {
-                channel.publish('shoot', { x: player.x, y: player.y, targetX: targetX, targetY: targetY, color: myColor, speed: weapon.speed, angle: spreadAngle });
+                        spawnBullet(
+                            scene,
+                            player.x,
+                            player.y,
+                            targetX,
+                            targetY,
+                            myColor,
+                            weapon.speed,
+                            spreadAngle,
+                            true,
+                        );
+                        if (channel)
+                            channel.publish("shoot", {
+                                x: player.x,
+                                y: player.y,
+                                targetX: targetX,
+                                targetY: targetY,
+                                color: myColor,
+                                speed: weapon.speed,
+                                angle: spreadAngle,
+                            });
+                    }
+                    lastFired = time + weapon.cooldown;
+                }
             }
-        }
-        lastFired = time + weapon.cooldown;
-    }
-}
 
-function triggerReload(scene) {
-    isReloading = true;
-    reloadText.setVisible(true);
-    ammoText.setFill('#ff3366'); // Turn ammo text red while reloading
+            function triggerDeath(scene) {
+                isDead = true;
+                player.setVisible(false);
+                player.body.enable = false; // Turn off physics
+                player.healthBar.clear();
+                player.nameTag.setVisible(false);
+                deathText.setVisible(true);
 
-    scene.time.delayedCall(WEAPONS[myWeapon].reloadTime, () => {
-        currentAmmo = WEAPONS[myWeapon].magSize;
-        isReloading = false;
-        reloadText.setVisible(false);
-        updateAmmoUI();
-    });
-}
+                // Drop loot for other players (50% chance health, 50% chance ammo)
+                let dropType = Math.random() > 0.5 ? "health" : "ammo";
+                channel.publish("dropItem", {
+                    x: player.x,
+                    y: player.y,
+                    type: dropType,
+                    id: Math.random().toString(36).substr(2, 6),
+                });
+                sendNetworkUpdate(); // Tell network we are dead so they hide our body
 
-function updateAmmoUI() {
-    ammoText.setText(`AMMO: ${currentAmmo} / ${WEAPONS[myWeapon].magSize}`);
-    ammoText.setFill(currentAmmo === 0 ? '#ff3366' : '#00ffcc');
-}
+                // 3 Second Cooldown Timer
+                scene.time.delayedCall(3000, () => {
+                    isDead = false;
+                    player.health = 100;
+                    currentAmmo = WEAPONS[myWeapon].magSize;
+                    updateAmmoUI();
 
-function spawnBullet(scene, fromX, fromY, toX, toY, colorHex, speed, angle, isMine) {
-    // Spawn bullet slightly in front of the player (out of the barrel)
-    let startX = fromX + Math.cos(angle) * 20;
-    let startY = fromY + Math.sin(angle) * 20;
+                    player.setPosition(
+                        Math.random() * 800 + 50,
+                        Math.random() * 550 + 50,
+                    );
+                    player.setVisible(true);
+                    player.body.enable = true;
+                    player.nameTag.setVisible(true);
+                    deathText.setVisible(false);
 
-    let bullet = bullets.get(startX, startY);
-    if (bullet) {
-        bullet.setActive(true).setVisible(true);
-        bullet.setTint(parseInt(colorHex));
-        bullet.setRotation(angle); // Rotate bullet graphic to face travel direction
-        bullet.isMine = isMine;
-        scene.physics.moveTo(bullet, toX, toY, speed);
-        
-        scene.time.delayedCall(1500, () => { if (bullet.active) bullet.destroy(); });
-    }
-}
+                    sendNetworkUpdate();
+                });
+            }
 
-function createHitEffect(scene, x, y, color) {
-    // Simple impact flash using a circle graphic
-    let flash = scene.add.circle(x, y, 10, parseInt(color));
-    scene.tweens.add({ targets: flash, scale: 2, alpha: 0, duration: 150, onComplete: () => flash.destroy() });
-}
+            function triggerReload(scene) {
+                isReloading = true;
+                reloadText.setVisible(true);
+                ammoText.setFill("#ff3366");
+                scene.time.delayedCall(WEAPONS[myWeapon].reloadTime, () => {
+                    currentAmmo = WEAPONS[myWeapon].magSize;
+                    isReloading = false;
+                    reloadText.setVisible(false);
+                    updateAmmoUI();
+                });
+            }
 
-function sendNetworkUpdate() {
-    if (!channel) return;
-    channel.publish('update', {
-        x: player.x,
-        y: player.y,
-        rotation: player.rotation, // Broadcast where we are aiming!
-        name: myName,
-        color: myColor,
-        health: player.health
-    });
-}
+            function updateAmmoUI() {
+                ammoText.setText(
+                    `AMMO: ${currentAmmo} / ${WEAPONS[myWeapon].magSize}`,
+                );
+                ammoText.setFill(currentAmmo === 0 ? "#ff3366" : "#00ffcc");
+            }
 
-function updateDynamicUI(sprite, isLocal) {
-    sprite.nameTag.setPosition(sprite.x, sprite.y - 35);
-    sprite.healthBar.clear();
-    sprite.healthBar.fillStyle(0x222222, 1);
-    sprite.healthBar.fillRect(sprite.x - 20, sprite.y - 25, 40, 6);
-    
-    let barColor = isLocal ? 0x00ffcc : 0xff3366;
-    let healthWidth = Math.max(0, (sprite.health / 100) * 40);
-    sprite.healthBar.fillStyle(barColor, 1);
-    sprite.healthBar.fillRect(sprite.x - 20, sprite.y - 25, healthWidth, 6);
-}
-</script>
+            function spawnBullet(
+                scene,
+                fromX,
+                fromY,
+                toX,
+                toY,
+                colorHex,
+                speed,
+                angle,
+                isMine,
+            ) {
+                let startX = fromX + Math.cos(angle) * 20;
+                let startY = fromY + Math.sin(angle) * 20;
+                let bullet = bullets.get(startX, startY);
+                if (bullet) {
+                    bullet
+                        .setActive(true)
+                        .setVisible(true)
+                        .setTint(parseInt(colorHex))
+                        .setRotation(angle);
+                    bullet.isMine = isMine;
+                    scene.physics.moveTo(bullet, toX, toY, speed);
+                    scene.time.delayedCall(1200, () => {
+                        if (bullet.active) bullet.destroy();
+                    });
+                }
+            }
 
-</body>
+            function createHitEffect(scene, x, y, color, size) {
+                let flash = scene.add.circle(x, y, size, parseInt(color));
+                scene.tweens.add({
+                    targets: flash,
+                    scale: 2,
+                    alpha: 0,
+                    duration: 150,
+                    onComplete: () => flash.destroy(),
+                });
+            }
+
+            function sendNetworkUpdate() {
+                if (!channel) return;
+                channel.publish("update", {
+                    x: player.x,
+                    y: player.y,
+                    rotation: player.rotation,
+                    name: myName,
+                    color: myColor,
+                    health: player.health,
+                    isDead: isDead,
+                });
+            }
+
+            function updateDynamicUI(sprite, isLocal) {
+                if (sprite.isDead || isDead) {
+                    sprite.healthBar.clear();
+                    return;
+                } // Hide bars if dead
+                sprite.nameTag.setPosition(sprite.x, sprite.y - 35);
+                sprite.healthBar.clear();
+                sprite.healthBar.fillStyle(0x222222, 1);
+                sprite.healthBar.fillRect(sprite.x - 20, sprite.y - 25, 40, 6);
+                let barColor = isLocal ? 0x00ffcc : 0xff3366;
+                let healthWidth = Math.max(0, (sprite.health / 100) * 40);
+                sprite.healthBar.fillStyle(barColor, 1);
+                sprite.healthBar.fillRect(
+                    sprite.x - 20,
+                    sprite.y - 25,
+                    healthWidth,
+                    6,
+                );
+            }
+        </script>
+    </body>
 </html>
