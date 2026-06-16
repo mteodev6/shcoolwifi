@@ -39,7 +39,6 @@
 
 <script>
 // --- Config ---
-const ABLY_KEY = 'mWq-qg.aSAwag:CfLtHjHdS9lBnkqrB9RzytbXrCK76hPhXFoFWa8c65g'; // <--- PUT YOUR API KEY HERE
 const ROOM_NAME = 'school-arena-tournament';
 const MAP_SIZE = 3000;
 const KILLS_TO_WIN = 10; // First to 10 kills wins the match!
@@ -106,7 +105,7 @@ function create() {
     this.physics.world.setBounds(0, 0, MAP_SIZE, MAP_SIZE);
     this.add.grid(MAP_SIZE/2, MAP_SIZE/2, MAP_SIZE, MAP_SIZE, 100, 100, 0xf0f0f5, 0, 0x0000ff, 0.1);
 
-    ably = new Ably.Realtime({ key: ABLY_KEY, clientId: myId });
+    ably = new Ably.Realtime({ authUrl: '/api/get-ably-token' });
     channel = ably.channels.get(ROOM_NAME);
 
     walls = this.physics.add.staticGroup();
