@@ -3,26 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Neon Arena: Tournament</title>
+    <title>Neon Arena: Twilight Tournament</title>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
     <style>
-        body { margin: 0; background: #f0f0f5; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; font-family: 'Segoe UI', Tahoma, sans-serif; color: #333; }
-        canvas { box-shadow: 0 0 40px rgba(0, 0, 255, 0.15); border: 2px solid #222; border-radius: 8px; }
+        /* Twilight Theme Styles */
+        body { margin: 0; background: #1e1e2f; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; font-family: 'Segoe UI', Tahoma, sans-serif; color: #fff; }
+        canvas { box-shadow: 0 0 40px rgba(0, 255, 204, 0.1); border: 2px solid #2a2a40; border-radius: 8px; }
         
-        #lobby { background: rgba(255, 255, 255, 0.95); padding: 30px; border-radius: 12px; border: 2px solid #0066ff; text-align: center; box-shadow: 0 0 20px rgba(0, 102, 255, 0.2); width: 320px; z-index: 10; position: absolute; }
-        h2 { margin-top: 0; color: #0066ff; letter-spacing: 2px; }
-        input, select { width: 100%; padding: 10px; margin: 12px 0; border-radius: 6px; border: 1px solid #ccc; background: #fff; color: #333; font-size: 16px; box-sizing: border-box; }
-        input:focus, select:focus { border-color: #0066ff; outline: none; }
-        button { width: 100%; padding: 12px; background: #0066ff; color: #fff; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.2s; }
-        button:hover { background: #0044cc; box-shadow: 0 0 15px rgba(0, 102, 255, 0.4); }
-        label { display: block; text-align: left; font-size: 14px; color: #555; margin-bottom: -4px; }
+        #lobby { background: rgba(30, 30, 47, 0.95); padding: 30px; border-radius: 12px; border: 2px solid #00ffcc; text-align: center; box-shadow: 0 0 20px rgba(0, 255, 204, 0.2); width: 320px; z-index: 10; position: absolute; }
+        h2 { margin-top: 0; color: #00ffcc; letter-spacing: 2px; }
+        input, select { width: 100%; padding: 10px; margin: 12px 0; border-radius: 6px; border: 1px solid #444; background: #2a2a40; color: #fff; font-size: 16px; box-sizing: border-box; }
+        input:focus, select:focus { border-color: #00ffcc; outline: none; }
+        button { width: 100%; padding: 12px; background: #00ffcc; color: #1e1e2f; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        button:hover { background: #00ccff; box-shadow: 0 0 15px rgba(0, 255, 204, 0.4); }
+        label { display: block; text-align: left; font-size: 14px; color: #aaa; margin-bottom: -4px; }
     </style>
 </head>
 <body>
 
 <div id="lobby">
-    <h2>NEON ARENA</h2>
+    <h2>TWILIGHT ARENA</h2>
     <label for="username">Username</label>
     <input type="text" id="username" placeholder="Player" maxlength="12">
     
@@ -39,9 +40,9 @@
 
 <script>
 // --- Config ---
-const ROOM_NAME = 'school-arena-tournament';
+const ROOM_NAME = 'school-arena-tournament-master';
 const MAP_SIZE = 3000;
-const KILLS_TO_WIN = 10; // First to 10 kills wins the match!
+const KILLS_TO_WIN = 10; 
 
 // Expanded Arsenal
 const WEAPONS = {
@@ -53,7 +54,7 @@ const WEAPONS = {
 };
 
 let ably, channel;
-let myId = 'player_' + Math.random().toString(36).substr(2, 9);
+let myId = null; // Assigned by the server to prevent the Ghost Bug
 let player, otherPlayers = {}, dummies = [];
 let bullets, walls, powerups, rareWeapons;
 let cursors, wasd, numKeys, reloadKey;
@@ -69,7 +70,7 @@ let isReloading = false, isDead = false, matchOver = false;
 
 // Score Tracking
 let myKills = 0;
-let playerScores = {}; // Tracks everyone's kills
+let playerScores = {}; 
 
 // UI
 let ammoText, reloadText, deathText, weaponText, leaderboardText, winnerText;
@@ -84,49 +85,61 @@ function startGame() {
 }
 
 const config = {
-    type: Phaser.AUTO, width: 900, height: 650, backgroundColor: '#f0f0f5', 
+    type: Phaser.AUTO, width: 900, height: 650, backgroundColor: '#1e1e2f', // Twilight Slate Background
     physics: { default: 'arcade', arcade: { debug: false } },
     scene: { preload: preload, create: create, update: update }
 };
 
 function preload() {
-    let g = this.make.graphics({x: 0, y: 0, add: false}); g.fillStyle(0xffffff, 1); g.fillCircle(20, 20, 16); g.fillStyle(0x666666, 1); g.fillRect(20, 14, 26, 12); g.generateTexture('base_player', 50, 40);
-    let bg = this.make.graphics({x: 0, y: 0, add: false}); bg.fillStyle(0x333333, 1); bg.fillRoundedRect(0, 0, 16, 6, 3); bg.generateTexture('bullet', 16, 6);
-    let wg = this.make.graphics({x: 0, y: 0, add: false}); wg.fillStyle(0xdddddd, 1); wg.fillRect(0, 0, 80, 80); wg.lineStyle(2, 0x999999, 1); wg.strokeRect(0, 0, 80, 80); wg.generateTexture('wall', 80, 80);
+    let g = this.make.graphics({x: 0, y: 0, add: false}); g.fillStyle(0xffffff, 1); g.fillCircle(20, 20, 16); g.fillStyle(0x888899, 1); g.fillRect(20, 14, 26, 12); g.generateTexture('base_player', 50, 40);
+    let bg = this.make.graphics({x: 0, y: 0, add: false}); bg.fillStyle(0xffffaa, 1); bg.fillRoundedRect(0, 0, 16, 6, 3); bg.generateTexture('bullet', 16, 6);
+    let wg = this.make.graphics({x: 0, y: 0, add: false}); wg.fillStyle(0x2a2a40, 1); wg.fillRect(0, 0, 80, 80); wg.lineStyle(2, 0x4a4a6a, 1); wg.strokeRect(0, 0, 80, 80); wg.generateTexture('wall', 80, 80);
     
     let hg = this.make.graphics({x: 0, y: 0, add: false}); hg.fillStyle(0x33ff33, 1); hg.fillRect(0, 0, 20, 20); hg.fillStyle(0xffffff, 1); hg.fillRect(8, 4, 4, 12); hg.fillRect(4, 8, 12, 4); hg.generateTexture('healthPack', 20, 20);
-    let ag = this.make.graphics({x: 0, y: 0, add: false}); ag.fillStyle(0x0066ff, 1); ag.fillRect(0, 0, 20, 20); ag.fillStyle(0xffffff, 1); ag.fillCircle(10, 10, 6); ag.generateTexture('ammoPack', 20, 20);
-    let sg = this.make.graphics({x: 0, y: 0, add: false}); sg.fillStyle(0xff9900, 1); sg.fillRect(0, 0, 40, 15); sg.fillStyle(0xffffff, 1); sg.fillRect(30, 5, 20, 5); sg.generateTexture('sniperDrop', 50, 15);
+    let ag = this.make.graphics({x: 0, y: 0, add: false}); ag.fillStyle(0x00ccff, 1); ag.fillRect(0, 0, 20, 20); ag.fillStyle(0xffffff, 1); ag.fillCircle(10, 10, 6); ag.generateTexture('ammoPack', 20, 20);
+    let sg = this.make.graphics({x: 0, y: 0, add: false}); sg.fillStyle(0xffaa00, 1); sg.fillRect(0, 0, 40, 15); sg.fillStyle(0xffffff, 1); sg.fillRect(30, 5, 20, 5); sg.generateTexture('sniperDrop', 50, 15);
     
-    let dg = this.make.graphics({x: 0, y: 0, add: false}); dg.fillStyle(0xffffff, 1); dg.fillRect(0, 0, 40, 40); dg.lineStyle(4, 0xff0000, 1); dg.strokeRect(0, 0, 40, 40); dg.generateTexture('dummy', 40, 40);
+    let dg = this.make.graphics({x: 0, y: 0, add: false}); dg.fillStyle(0x2a2a40, 1); dg.fillRect(0, 0, 40, 40); dg.lineStyle(3, 0xff5555, 1); dg.strokeRect(0, 0, 40, 40); dg.generateTexture('dummy', 40, 40);
 }
 
 function create() {
     this.physics.world.setBounds(0, 0, MAP_SIZE, MAP_SIZE);
-    this.add.grid(MAP_SIZE/2, MAP_SIZE/2, MAP_SIZE, MAP_SIZE, 100, 100, 0xf0f0f5, 0, 0x0000ff, 0.1);
+    this.add.grid(MAP_SIZE/2, MAP_SIZE/2, MAP_SIZE, MAP_SIZE, 100, 100, 0x1e1e2f, 0, 0x2a2a40, 0.5);
 
+    // --- SECURE CONNECTION & GHOST BUG FIX ---
     ably = new Ably.Realtime({ authUrl: '/api/get-ably-token' });
     channel = ably.channels.get(ROOM_NAME);
+
+    ably.connection.on('connected', () => {
+        myId = ably.auth.clientId; // Grab official ID from backend
+        playerScores[myId] = { name: myName, kills: 0 };
+        channel.presence.enter();
+        setupNetworking(this); // Only listen after we have an ID
+    });
 
     walls = this.physics.add.staticGroup();
     powerups = this.physics.add.group();
     rareWeapons = this.physics.add.group();
     bullets = this.physics.add.group({ defaultKey: 'bullet' });
 
+    // --- MAP DESYNC FIX (Seeded Randomness) ---
+    Phaser.Math.RND.sow(['twilight-arena-seed-1']);
+
     for (let x = 200; x < MAP_SIZE - 200; x += 500) {
         for (let y = 200; y < MAP_SIZE - 200; y += 500) {
-            if (Math.random() > 0.3) {
+            if (Phaser.Math.RND.frac() > 0.3) {
                 walls.create(x, y, 'wall');
-                if (Math.random() > 0.5) walls.create(x + 80, y, 'wall');
-                if (Math.random() > 0.5) walls.create(x, y + 80, 'wall');
-                if (Math.random() > 0.9) {
+                if (Phaser.Math.RND.frac() > 0.5) walls.create(x + 80, y, 'wall');
+                if (Phaser.Math.RND.frac() > 0.5) walls.create(x, y + 80, 'wall');
+                if (Phaser.Math.RND.frac() > 0.9) {
                     let s = rareWeapons.create(x + 40, y + 40, 'sniperDrop');
-                    s.itemId = Math.random().toString(36).substr(2, 6);
+                    s.itemId = Math.random().toString(36).substr(2, 6); // Keep IDs truly random
                 }
             }
         }
     }
 
+    // Target Dummies
     for(let i = 0; i < 5; i++) {
         let dummy = this.physics.add.sprite(MAP_SIZE/2 + (i*100) - 200, MAP_SIZE/2 + 200, 'dummy');
         dummy.setImmovable(true); dummy.health = 500; dummy.maxHealth = 500;
@@ -134,20 +147,22 @@ function create() {
         dummies.push(dummy);
     }
 
-    player = this.physics.add.sprite(MAP_SIZE/2, MAP_SIZE/2, 'base_player');
+    // Player (Truly random spawn so people don't stack)
+    player = this.physics.add.sprite(Math.random() * (MAP_SIZE-400) + 200, Math.random() * (MAP_SIZE-400) + 200, 'base_player');
     player.setCollideWorldBounds(true).setTint(parseInt(myColor));
     player.health = 100;
     
-    player.nameTag = this.add.text(0, 0, myName, { fontSize: '14px', fontStyle: 'bold', fill: '#333333' }).setOrigin(0.5);
+    player.nameTag = this.add.text(0, 0, myName, { fontSize: '14px', fontStyle: 'bold', fill: '#ffffff' }).setOrigin(0.5);
     player.healthBar = this.add.graphics();
 
     this.cameras.main.setBounds(0, 0, MAP_SIZE, MAP_SIZE);
     this.cameras.main.startFollow(player, true, 0.1, 0.1);
 
+    // Collisions
     this.physics.add.collider(player, walls);
     this.physics.add.collider(dummies, walls);
     this.physics.add.collider(bullets, walls, (bullet, wall) => {
-        createHitEffect(this, bullet.x, bullet.y, '#333333', 5);
+        createHitEffect(this, bullet.x, bullet.y, '#ffffff', 5);
         bullet.destroy();
     });
     
@@ -155,34 +170,30 @@ function create() {
     this.physics.add.overlap(player, rareWeapons, (pl, weaponDrop) => {
         if (!myInventory.includes('sniper')) {
             myInventory.push('sniper'); switchWeapon('sniper');
-            this.cameras.main.flash(200, 255, 150, 0); 
+            this.cameras.main.flash(200, 255, 170, 0); 
         }
         channel.publish('clearItem', { id: weaponDrop.itemId });
         weaponDrop.destroy();
     });
 
-    // UI Setup
-    weaponText = this.add.text(20, 560, `WEAPON: ${WEAPONS[currentWeapon].name}`, { fontSize: '20px', fill: '#333333', fontStyle: 'bold' }).setDepth(100).setScrollFactor(0);
-    ammoText = this.add.text(20, 590, `AMMO: ${ammoPool[currentWeapon]} / ${WEAPONS[currentWeapon].magSize}`, { fontSize: '26px', fontStyle: 'bold', fill: '#0066ff' }).setDepth(100).setScrollFactor(0);
-    reloadText = this.add.text(450, 325, 'RELOADING...', { fontSize: '32px', fontStyle: 'bold', fill: '#ff3366' }).setOrigin(0.5).setVisible(false).setDepth(100).setScrollFactor(0);
-    deathText = this.add.text(450, 325, 'YOU DIED\nRespawning...', { fontSize: '40px', fontStyle: 'bold', fill: '#ff3366', align: 'center' }).setOrigin(0.5).setVisible(false).setDepth(100).setScrollFactor(0);
+    // Dark-Glass UI 
+    weaponText = this.add.text(20, 560, `WEAPON: ${WEAPONS[currentWeapon].name}`, { fontSize: '20px', fill: '#fff', fontStyle: 'bold' }).setDepth(100).setScrollFactor(0);
+    ammoText = this.add.text(20, 590, `AMMO: ${ammoPool[currentWeapon]} / ${WEAPONS[currentWeapon].magSize}`, { fontSize: '26px', fontStyle: 'bold', fill: '#00ffcc' }).setDepth(100).setScrollFactor(0);
+    reloadText = this.add.text(450, 325, 'RELOADING...', { fontSize: '32px', fontStyle: 'bold', fill: '#ff5555' }).setOrigin(0.5).setVisible(false).setDepth(100).setScrollFactor(0);
+    deathText = this.add.text(450, 325, 'YOU DIED\nRespawning...', { fontSize: '40px', fontStyle: 'bold', fill: '#ff5555', align: 'center' }).setOrigin(0.5).setVisible(false).setDepth(100).setScrollFactor(0);
     
-    // Win & Leaderboard UI
-    leaderboardText = this.add.text(880, 20, "--- LEADERBOARD ---\nWaiting for players...", { fontSize: '18px', fontStyle: 'bold', fill: '#333333', align: 'right', backgroundColor: 'rgba(255,255,255,0.7)' }).setOrigin(1, 0).setPadding(10).setDepth(100).setScrollFactor(0);
-    winnerText = this.add.text(450, 300, "", { fontSize: '60px', fontStyle: 'bold', fill: '#0066ff', align: 'center', stroke: '#fff', strokeThickness: 8 }).setOrigin(0.5).setVisible(false).setDepth(200).setScrollFactor(0);
+    leaderboardText = this.add.text(880, 20, "--- LEADERBOARD ---\nConnecting...", { fontSize: '18px', fontStyle: 'bold', fill: '#fff', align: 'right', backgroundColor: 'rgba(42, 42, 64, 0.8)' }).setOrigin(1, 0).setPadding(15).setDepth(100).setScrollFactor(0);
+    winnerText = this.add.text(450, 300, "", { fontSize: '60px', fontStyle: 'bold', fill: '#00ffcc', align: 'center', stroke: '#1e1e2f', strokeThickness: 8 }).setOrigin(0.5).setVisible(false).setDepth(200).setScrollFactor(0);
 
     cursors = this.input.keyboard.createCursorKeys();
     wasd = this.input.keyboard.addKeys({ W: 87, S: 83, A: 65, D: 68 });
     reloadKey = this.input.keyboard.addKey(82); 
     numKeys = { 1: this.input.keyboard.addKey(49), 2: this.input.keyboard.addKey(50), 3: this.input.keyboard.addKey(51), 4: this.input.keyboard.addKey(52), 5: this.input.keyboard.addKey(53) };
-
-    playerScores[myId] = { name: myName, kills: 0 }; // Initialize my score
-    setupNetworking(this);
 }
 
 function update(time) {
-    if (!player || isDead || matchOver) {
-        player.setVelocity(0); // Stop moving if dead or game is over
+    if (!player || isDead || matchOver || !myId) {
+        if (player) player.setVelocity(0); 
         return; 
     }
 
@@ -208,7 +219,6 @@ function update(time) {
 
     updateDynamicUI(player, true);
     
-    // DUMMY HIT DETECTION
     dummies.forEach(dummy => {
         updateDummyUI(dummy);
         this.physics.overlap(bullets, dummy, (d, bullet) => {
@@ -217,14 +227,12 @@ function update(time) {
                 dummy.health -= WEAPONS[currentWeapon].damage;
                 if(dummy.health <= 0) {
                     dummy.health = dummy.maxHealth; 
-                    // Register a kill for hitting a dummy!
                     channel.publish('kill', { killerId: myId, killerName: myName, victimName: 'Dummy' });
                 }
             }
         });
     });
 
-    // PVP HIT DETECTION
     Object.keys(otherPlayers).forEach(id => {
         let enemy = otherPlayers[id];
         updateDynamicUI(enemy, false);
@@ -233,7 +241,6 @@ function update(time) {
             this.physics.overlap(bullets, enemy, (enemySprite, bulletSprite) => {
                 if (bulletSprite.isMine) {
                     bulletSprite.destroy(); createHitEffect(this, bulletSprite.x, bulletSprite.y, myColor, 10);
-                    // Tell the network WHO shot them
                     channel.publish('hit', { targetId: id, damage: WEAPONS[currentWeapon].damage, shooterId: myId, shooterName: myName });
                 }
             });
@@ -269,7 +276,7 @@ function attemptFire(scene, pointer) {
                     createHitEffect(scene, d.x, d.y, myColor, 10);
                     if(d.health <= 0) {
                         d.health = d.maxHealth;
-                        channel.publish('kill', { killerId: myId, killerName: myName, victimName: 'Dummy' });
+                        channel.publish('kill', { killerId: myId, killerName: myName });
                     }
                 }
             });
@@ -325,7 +332,7 @@ function spawnBullet(scene, fromX, fromY, toX, toY, colorHex, speed, angle, isMi
 function triggerReload(scene) {
     if(WEAPONS[currentWeapon].reloadTime === 0 || matchOver) return; 
     playSound('reload');
-    isReloading = true; reloadText.setVisible(true); ammoText.setFill('#ff3366');
+    isReloading = true; reloadText.setVisible(true); ammoText.setFill('#ff5555');
     scene.time.delayedCall(WEAPONS[currentWeapon].reloadTime, () => {
         ammoPool[currentWeapon] = WEAPONS[currentWeapon].magSize; 
         isReloading = false; reloadText.setVisible(false); updateAmmoUI();
@@ -339,7 +346,7 @@ function handlePowerupPickup(pl, powerup) {
         this.cameras.main.flash(100, 0, 255, 0);
     } else if (powerup.type === 'ammo') {
         myInventory.forEach(w => ammoPool[w] = WEAPONS[w].magSize);
-        this.cameras.main.flash(100, 0, 100, 255);
+        this.cameras.main.flash(100, 0, 200, 255);
         updateAmmoUI();
     }
     playSound('reload'); 
@@ -359,12 +366,12 @@ function triggerDeath(scene) {
     sendNetworkUpdate();
 
     scene.time.delayedCall(3000, () => {
-        if (matchOver) return; // Don't respawn if match is over
+        if (matchOver) return; 
         isDead = false; player.health = 100;
         myInventory.forEach(w => ammoPool[w] = WEAPONS[w].magSize); 
         updateAmmoUI();
         
-        player.setPosition(Math.random() * (MAP_SIZE-200) + 100, Math.random() * (MAP_SIZE-200) + 100);
+        player.setPosition(Math.random() * (MAP_SIZE-400) + 200, Math.random() * (MAP_SIZE-400) + 200);
         player.setVisible(true).body.enable = true;
         player.nameTag.setVisible(true); deathText.setVisible(false);
         sendNetworkUpdate();
@@ -374,27 +381,21 @@ function triggerDeath(scene) {
 function triggerWinSequence(scene, winnerName) {
     matchOver = true;
     winnerText.setText(`${winnerName} WINS!`).setVisible(true);
-    
-    // Stop all movement
     player.setVelocity(0);
     
-    // 5 second delay before restarting
     scene.time.delayedCall(5000, () => {
         matchOver = false;
         winnerText.setVisible(false);
         deathText.setVisible(false);
         
-        // Reset scores
         myKills = 0;
         Object.keys(playerScores).forEach(id => playerScores[id].kills = 0);
         updateLeaderboardUI();
 
-        // Respawn and fully heal
-        isDead = false;
-        player.health = 100;
+        isDead = false; player.health = 100;
         myInventory.forEach(w => ammoPool[w] = WEAPONS[w].magSize);
         updateAmmoUI();
-        player.setPosition(Math.random() * (MAP_SIZE-200) + 100, Math.random() * (MAP_SIZE-200) + 100);
+        player.setPosition(Math.random() * (MAP_SIZE-400) + 200, Math.random() * (MAP_SIZE-400) + 200);
         player.setVisible(true).body.enable = true;
         player.nameTag.setVisible(true);
         sendNetworkUpdate();
@@ -403,11 +404,12 @@ function triggerWinSequence(scene, winnerName) {
 
 function setupNetworking(scene) {
     channel.subscribe('update', (msg) => {
-        if (msg.clientId === myId) return; let d = msg.data;
+        if (!myId || msg.clientId === myId) return; 
+        let d = msg.data;
         if (!otherPlayers[msg.clientId]) {
             let enemy = scene.physics.add.sprite(d.x, d.y, 'base_player');
             enemy.setTint(parseInt(d.color));
-            enemy.nameTag = scene.add.text(0, 0, d.name, { fontSize: '13px', fontStyle: 'bold', fill: '#333333' }).setOrigin(0.5);
+            enemy.nameTag = scene.add.text(0, 0, d.name, { fontSize: '14px', fontStyle: 'bold', fill: '#ffffff' }).setOrigin(0.5);
             enemy.healthBar = scene.add.graphics();
             otherPlayers[msg.clientId] = enemy;
         }
@@ -416,7 +418,6 @@ function setupNetworking(scene) {
         enemy.health = d.health; enemy.isDead = d.isDead;
         enemy.setVisible(!d.isDead); enemy.nameTag.setVisible(!d.isDead);
 
-        // Keep leaderboard in sync if someone joins late
         if (!playerScores[msg.clientId] || playerScores[msg.clientId].kills < d.kills) {
             playerScores[msg.clientId] = { name: d.name, kills: d.kills || 0 };
             updateLeaderboardUI();
@@ -424,7 +425,7 @@ function setupNetworking(scene) {
     });
 
     channel.subscribe('shoot', (msg) => {
-        if (msg.clientId === myId) return; let d = msg.data;
+        if (!myId || msg.clientId === myId) return; let d = msg.data;
         playSound('shoot'); 
         spawnBullet(scene, d.x, d.y, d.targetX, d.targetY, d.color, d.speed, d.angle, false, d.lifespan);
     });
@@ -436,7 +437,6 @@ function setupNetworking(scene) {
             scene.cameras.main.flash(50, 255, 0, 0);
             playSound('hit'); 
             if (player.health <= 0) {
-                // Tell everyone WHO killed me
                 channel.publish('kill', { killerId: d.shooterId, killerName: d.shooterName, victimName: myName });
                 triggerDeath(scene);
             }
@@ -444,7 +444,6 @@ function setupNetworking(scene) {
         }
     });
 
-    // --- NEW: KILL TRACKING ---
     channel.subscribe('kill', (msg) => {
         let d = msg.data;
         if (!playerScores[d.killerId]) playerScores[d.killerId] = { name: d.killerName, kills: 0 };
@@ -453,11 +452,7 @@ function setupNetworking(scene) {
         if (d.killerId === myId) myKills = playerScores[myId].kills;
         
         updateLeaderboardUI();
-
-        // Check Win Condition
-        if (playerScores[d.killerId].kills >= KILLS_TO_WIN) {
-            triggerWinSequence(scene, d.killerName);
-        }
+        if (playerScores[d.killerId].kills >= KILLS_TO_WIN) triggerWinSequence(scene, d.killerName);
     });
 
     channel.subscribe('dropItem', (msg) => {
@@ -476,32 +471,26 @@ function setupNetworking(scene) {
             otherPlayers[member.clientId].healthBar.destroy();
             otherPlayers[member.clientId].destroy();
             delete otherPlayers[member.clientId];
-            delete playerScores[member.clientId]; // Remove from leaderboard
+            delete playerScores[member.clientId]; 
             updateLeaderboardUI();
         }
     });
-    channel.presence.enter();
 }
 
 function updateLeaderboardUI() {
-    // Sort players by highest kills
-    let sorted = Object.values(playerScores).sort((a, b) => b.kills - a.kills).slice(0, 5); // Top 5
-    
+    let sorted = Object.values(playerScores).sort((a, b) => b.kills - a.kills).slice(0, 5); 
     let text = "--- GOAL: " + KILLS_TO_WIN + " KILLS ---\n\n";
-    sorted.forEach((p, i) => {
-        text += `${i+1}. ${p.name}: ${p.kills}\n`;
-    });
-    
+    sorted.forEach((p, i) => { text += `${i+1}. ${p.name}: ${p.kills}\n`; });
     leaderboardText.setText(text);
 }
 
 function updateAmmoUI() {
     if (currentWeapon === 'knife') {
         ammoText.setText(`AMMO: N/A`);
-        ammoText.setFill('#666666'); 
+        ammoText.setFill('#888899'); 
     } else {
         ammoText.setText(`AMMO: ${ammoPool[currentWeapon]} / ${WEAPONS[currentWeapon].magSize}`);
-        ammoText.setFill(ammoPool[currentWeapon] === 0 ? '#ff3366' : '#0066ff');
+        ammoText.setFill(ammoPool[currentWeapon] === 0 ? '#ff5555' : '#00ffcc');
     }
 }
 
@@ -513,7 +502,6 @@ function createHitEffect(scene, x, y, color, size) {
 
 function sendNetworkUpdate() {
     if (!channel) return;
-    // Added kills to network update so late-joiners can see your score
     channel.publish('update', { x: player.x, y: player.y, rotation: player.rotation, name: myName, color: myColor, health: player.health, isDead: isDead, kills: myKills });
 }
 
@@ -521,54 +509,38 @@ function updateDynamicUI(sprite, isLocal) {
     if (sprite.isDead || isDead) { sprite.healthBar.clear(); return; }
     sprite.nameTag.setPosition(sprite.x, sprite.y - 35);
     sprite.healthBar.clear();
-    sprite.healthBar.fillStyle(0xcccccc, 1); sprite.healthBar.fillRect(sprite.x - 20, sprite.y - 25, 40, 6);
-    let barColor = isLocal ? 0x0066ff : 0xff3366;
+    sprite.healthBar.fillStyle(0x2a2a40, 1); sprite.healthBar.fillRect(sprite.x - 20, sprite.y - 25, 40, 6);
+    let barColor = isLocal ? 0x00ffcc : 0xff5555;
     let healthWidth = Math.max(0, (sprite.health / 100) * 40);
     sprite.healthBar.fillStyle(barColor, 1); sprite.healthBar.fillRect(sprite.x - 20, sprite.y - 25, healthWidth, 6);
 }
 
 function updateDummyUI(dummy) {
     dummy.healthBar.clear();
-    dummy.healthBar.fillStyle(0xcccccc, 1); dummy.healthBar.fillRect(dummy.x - 20, dummy.y - 25, 40, 6);
+    dummy.healthBar.fillStyle(0x2a2a40, 1); dummy.healthBar.fillRect(dummy.x - 20, dummy.y - 25, 40, 6);
     let healthWidth = Math.max(0, (dummy.health / dummy.maxHealth) * 40);
-    dummy.healthBar.fillStyle(0x333333, 1); dummy.healthBar.fillRect(dummy.x - 20, dummy.y - 25, healthWidth, 6);
+    dummy.healthBar.fillStyle(0x888899, 1); dummy.healthBar.fillRect(dummy.x - 20, dummy.y - 25, healthWidth, 6);
 }
 
 // --- 8-BIT AUDIO SYNTHESIZER ---
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
 function playSound(type) {
     if (audioCtx.state === 'suspended') return; 
-    
-    let osc = audioCtx.createOscillator();
-    let gain = audioCtx.createGain();
+    let osc = audioCtx.createOscillator(); let gain = audioCtx.createGain();
     osc.connect(gain); gain.connect(audioCtx.destination);
-
     let now = audioCtx.currentTime;
 
     if (type === 'shoot') {
-        osc.type = 'square';
-        osc.frequency.setValueAtTime(600, now);
-        osc.frequency.exponentialRampToValueAtTime(100, now + 0.1);
-        gain.gain.setValueAtTime(0.05, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
-        osc.start(now); osc.stop(now + 0.1);
+        osc.type = 'square'; osc.frequency.setValueAtTime(600, now); osc.frequency.exponentialRampToValueAtTime(100, now + 0.1);
+        gain.gain.setValueAtTime(0.05, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1); osc.start(now); osc.stop(now + 0.1);
     } 
     else if (type === 'hit') {
-        osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(100, now);
-        osc.frequency.exponentialRampToValueAtTime(10, now + 0.2);
-        gain.gain.setValueAtTime(0.1, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
-        osc.start(now); osc.stop(now + 0.2);
+        osc.type = 'sawtooth'; osc.frequency.setValueAtTime(100, now); osc.frequency.exponentialRampToValueAtTime(10, now + 0.2);
+        gain.gain.setValueAtTime(0.1, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2); osc.start(now); osc.stop(now + 0.2);
     }
     else if (type === 'reload') {
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(300, now);
-        osc.frequency.setValueAtTime(400, now + 0.1);
-        gain.gain.setValueAtTime(0.05, now);
-        gain.gain.linearRampToValueAtTime(0, now + 0.2);
-        osc.start(now); osc.stop(now + 0.2);
+        osc.type = 'triangle'; osc.frequency.setValueAtTime(300, now); osc.frequency.setValueAtTime(400, now + 0.1);
+        gain.gain.setValueAtTime(0.05, now); gain.gain.linearRampToValueAtTime(0, now + 0.2); osc.start(now); osc.stop(now + 0.2);
     }
 }
 </script>
